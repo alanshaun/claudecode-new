@@ -1,0 +1,165 @@
+version: "3.9"
+
+services:
+  # ---- Redis（消息队列 + 结果后端）----
+  redis:
+    image: redis:7.4-alpine
+    container_name: globalmatch_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - globalmatch_net
+
+  # ---- FastAPI后端 ----
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: globalmatch_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - fallback_data:/app/fallback
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - globalmatch_net
+    mem_limit: 1g
+    memswap_limit: 1g
+
+  # ---- Celery Worker（后台任务）----
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: globalmatch_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - fallback_data:/app/fallback
+    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=4 --max-tasks-per-child=50 -Q default,search,email,monitor
+    networks:
+      - globalmatch_net
+    mem_limit: 2g
+    memswap_limit: 2g
+
+  # ---- Celery Beat（定时任务调度器）----
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: globalmatch_beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - celery_beat_data:/app/celerybeat
+    command: celery -A tasks.celery_app beat --loglevel=info --scheduler celery.beat.PersistentScheduler --schedule=/app/celerybeat/celerybeat-schedule
+    networks:
+      - globalmatch_net
+    mem_limit: 256m
+
+  # ---- Celery Flower监控（可选）----
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: globalmatch_flower
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery_worker
+    command: celery -A tasks.celery_app flower --port=5555 --basic_auth=admin:admin123
+    networks:
+      - globalmatch_net
+    mem_limit: 256m
+
+  # ---- Chainlit前端 ----
+  chainlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: globalmatch_chainlit
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CHAINLIT_NO_AUTH=true
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - chainlit_data:/app/.chainlit
+    command: chainlit run chainlit_app.py --host 0.0.0.0 --port 8080
+    networks:
+      - globalmatch_net
+    mem_limit: 1g
+    memswap_limit: 1g
+
+volumes:
+  redis_data:
+    driver: local
+  fallback_data:
+    driver: local
+  celery_beat_data:
+    driver: local
+  chainlit_data:
+    driver: local
+
+networks:
+  globalmatch_net:
+    driver: bridge
