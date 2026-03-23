@@ -16,13 +16,19 @@ logger = get_logger()
 
 
 async def run_daily():
-    """每日：Comtrade + OpenCorporates，限制 5000"""
-    from pipelines.comtrade import run as comtrade_run
+    """每日：OpenCorporates 优先（无需 Key），Comtrade 其次"""
     from pipelines.opencorporates import run as oc_run
+    from pipelines.comtrade import run as comtrade_run
     cfg = {"limit": 5000}
     total = 0
-    total += await comtrade_run(cfg)
-    total += await oc_run(cfg)
+    try:
+        total += await oc_run(cfg)
+    except Exception as e:
+        logger.warning("OpenCorporates 跳过", error=str(e))
+    try:
+        total += await comtrade_run(cfg)
+    except Exception as e:
+        logger.warning("Comtrade 跳过", error=str(e))
     return total
 
 
@@ -59,6 +65,10 @@ def run_email_enrichment(limit: int = 1000):
 
 
 def main():
+    import os
+    if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
+        raise SystemExit("错误：SUPABASE_URL 或 SUPABASE_KEY 未设置，请检查 GitHub Secrets")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["daily", "weekly", "email"], required=True)
     parser.add_argument("--limit", type=int, default=None)
@@ -75,4 +85,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise SystemExit(1)
