@@ -1,0 +1,6 @@
+# global_buyer_pipeline 依赖
+python-dotenv>=1.0.0
+supabase>=2.0.0
+httpx>=0.25.0
+pandas>=2.0.0
+structlog>=23.0.0

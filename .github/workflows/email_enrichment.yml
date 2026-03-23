@@ -1,0 +1,24 @@
+# 每天北京 03:00：global_buyer_pipeline 邮箱补全
+name: Email Enrichment
+
+on:
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+jobs:
+  enrichment:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: global_buyer_pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python main.py --mode email --limit 1000
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
