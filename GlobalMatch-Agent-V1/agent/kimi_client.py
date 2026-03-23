@@ -29,7 +29,7 @@ class KimiClient:
         wait=wait_exponential(multiplier=1, min=2, max=30),
         retry=retry_if_exception_type(Exception)
     )
-    async def chat(self, messages: list[dict], temperature: float = 0.3,
+    async def chat(self, messages: list[dict], temperature: float = 1.0,
                    max_tokens: int = 2000) -> str:
         """
         发送对话请求
@@ -79,7 +79,7 @@ class KimiClient:
         ]
 
         try:
-            response = await self.chat(messages, temperature=0.2)
+            response = await self.chat(messages, temperature=1.0)
             # 解析JSON
             import json
             # 提取JSON部分（防止模型输出多余文字）
@@ -131,7 +131,7 @@ class KimiClient:
         ]
 
         try:
-            response = await self.chat(messages, temperature=0.7)
+            response = await self.chat(messages, temperature=1.0)
             import json
             json_start = response.find("{")
             json_end = response.rfind("}") + 1
@@ -153,7 +153,7 @@ class KimiClient:
 
         messages = [{"role": "user", "content": prompt}]
         try:
-            response = await self.chat(messages, temperature=0.5)
+            response = await self.chat(messages, temperature=1.0)
             import json
             start = response.find("[")
             end = response.rfind("]") + 1

@@ -80,7 +80,11 @@ class SearchAgent:
             if buyer.get("email"):
                 emails = validate_emails_batch([buyer["email"]])
                 buyer["email"] = emails[0] if emails else ""
-        valid_buyers = [b for b in unique_buyers if b.get("email") or b.get("website")]
+        # 保留有联系方式或至少有公司名+国家的买家（无邮箱的可用于 LinkedIn 等后续开发）
+        valid_buyers = [
+            b for b in unique_buyers
+            if b.get("email") or b.get("website") or (b.get("company_name") and b.get("country"))
+        ]
 
         await self._update_progress(80, f"验证后有效买家 {len(valid_buyers)} 家")
 
@@ -114,7 +118,7 @@ class SearchAgent:
 
             results = await asyncio.wait_for(
                 scrape_fn(keywords, countries, buyer_types),
-                timeout=60.0
+                timeout=180.0  # 总任务30分钟，单爬虫放宽至3分钟
             )
             return results[:settings.MAX_RESULTS_PER_SOURCE] if results else []
 

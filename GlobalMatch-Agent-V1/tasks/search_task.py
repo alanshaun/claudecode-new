@@ -38,6 +38,7 @@ def run_search(self, task_id: str, user_query: str,
     - 超时返回已有结果
     """
     logger.info("搜索任务开始", task_id=task_id, query=user_query)
+    print(f"[Celery] run_search 收到任务: {task_id}")  # 便于排查
 
     try:
         loop = asyncio.new_event_loop()

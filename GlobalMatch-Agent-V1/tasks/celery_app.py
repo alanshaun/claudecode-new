@@ -2,6 +2,14 @@
 Celery应用配置
 支持：多队列、软硬超时、自动重试、任务去重、持久化
 """
+import sys
+from pathlib import Path
+
+# 确保项目根目录在 Python 路径中（Worker 需要导入 scrapers 等模块）
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from celery import Celery
 from celery.schedules import crontab
 from config import settings, CELERY_TASK_SOFT_TIME_LIMIT, CELERY_TASK_TIME_LIMIT

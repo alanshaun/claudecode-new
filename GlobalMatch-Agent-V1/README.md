@@ -92,8 +92,9 @@ cp .env.example .env
 # 6. 启动Redis（如果本地没有Redis，使用Docker）
 docker run -d -p 6379:6379 redis:7.4-alpine
 
-# 7. 启动Celery Worker（新终端）
-celery -A tasks.celery_app worker --loglevel=info -Q default,search,email,monitor
+# 7. 启动Celery Worker（新终端，必须用 run_celery.sh 或设置 PYTHONPATH）
+./run_celery.sh
+# 或: PYTHONPATH=$(pwd) celery -A tasks.celery_app worker --loglevel=info -Q default,search,email,monitor
 
 # 8. 启动Celery Beat（定时任务，新终端）
 celery -A tasks.celery_app beat --loglevel=info

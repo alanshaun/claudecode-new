@@ -3,6 +3,14 @@ GlobalMatch-Agent-V1 Chainlit主界面
 全简体中文，傻瓜操作
 支持：自然语言输入、PDF上传、进度实时更新、买家列表展示、批量发送、历史记录
 """
+import sys
+from pathlib import Path
+
+# 确保项目根目录在 Python 路径中（Chainlit 可能从其他目录加载）
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import asyncio
 import hashlib
 import os
@@ -16,6 +24,7 @@ from chainlit.input_widget import Select, Slider, TextInput, Switch
 
 from config import settings
 from database.supabase_client import db
+from tasks.search_task import run_search  # 顶层导入，避免 on_chat_start 中 No module named 'tasks'
 from database.supabase_client import (
     TABLE_SEARCH_TASKS, TABLE_SEARCH_RESULTS,
     TABLE_SENT_EMAILS, TABLE_REPLIES, TABLE_NOTIFICATIONS,
@@ -103,20 +112,34 @@ async def on_chat_start():
         if running_tasks:
             task = running_tasks[0]
             task_id = task.get("task_id")
-            progress = task.get("progress", 0)
+            status = task.get("status", "pending")
             user_query = task.get("user_query", "")
+            target_count = task.get("target_count", 100)
             cl.user_session.set("current_task_id", task_id)
             cl.user_session.set("state", "searching")
-            await cl.Message(
-                content=f"""🔄 **检测到未完成的搜索任务，自动恢复监控！**
 
-产品：{user_query[:50]}
-任务ID：`{task_id}`
-当前进度：{progress}%
-
-正在恢复进度追踪，请稍候...
-"""
-            ).send()
+            # pending 任务可能是之前 Celery 未收到的孤儿任务，立即重新提交
+            if status == "pending":
+                try:
+                    run_search.apply_async(
+                        args=[task_id, user_query, target_count, None, None],
+                        queue="search",
+                    )
+                    logger.info("恢复：pending 任务已重新提交 Celery", task_id=task_id)
+                    await cl.Message(
+                        content="""🔄 **发现未启动的搜索，已重新提交 Worker** · 进度见右上角"""
+                    ).send()
+                except Exception as e:
+                    logger.error("重新提交任务失败", task_id=task_id, error=str(e))
+                    await cl.Message(
+                        content=f"""🔄 **发现未完成的搜索**，但重新提交失败：{e}\n请重新输入产品描述开始新搜索"""
+                    ).send()
+                    cl.user_session.set("state", "waiting_for_product")
+                    return
+            else:
+                await cl.Message(
+                    content="""🔄 **检测到未完成的搜索，自动恢复监控** · 进度见右上角"""
+                ).send()
             asyncio.create_task(poll_task_progress(task_id))
     except Exception as e:
         logger.warning("检查历史任务失败", error=str(e))
@@ -372,33 +395,37 @@ async def start_search_task(target_count: int):
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
+    # 简短提示，进度条在 poll_task_progress 中通过右上角浮动显示
     await cl.Message(
-        content=f"""🚀 **搜索任务已启动！**
-
-任务ID：`{task_id}`
-目标数量：**{target_count}家**买家
-状态：后台运行中...
-
-⏳ **重要提示**：你可以关闭浏览器，任务会继续在后台运行！
-完成后将推送微信通知（需要配置Server酱）
-
-正在实时查询进度，请稍候...
-"""
+        content="""🚀 **搜索已启动**，进度见右上角 · 可关闭浏览器，任务继续运行"""
     ).send()
 
     # 提交Celery任务
     try:
-        from tasks.search_task import run_search
         celery_task = run_search.apply_async(
             args=[task_id, user_query, target_count, pdf_path, link_url],
             queue="search"
         )
         cl.user_session.set("celery_task_id", celery_task.id)
         logger.info("Celery任务已提交", celery_id=celery_task.id)
+        # 立即更新进度，让用户看到变化（失败不影响主流程）
+        try:
+            await db.update(TABLE_SEARCH_TASKS, {"task_id": task_id}, {
+                "progress": 1,
+                "status_message": "已提交 Worker，等待处理...",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            pass
     except Exception as e:
         logger.error("Celery任务提交失败", error=str(e))
+        await db.update(TABLE_SEARCH_TASKS, {"task_id": task_id}, {
+            "status": "failed",
+            "error_message": str(e)[:200],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
         await cl.Message(
-            content=f"⚠️ 任务提交失败：{e}\n请检查Redis和Celery Worker是否正常运行"
+            content=f"⚠️ 任务提交失败：{e}\n请检查 Redis 和 Celery Worker 是否运行：\n\n终端执行：\n`celery -A tasks.celery_app worker --loglevel=info -Q search`"
         ).send()
         return
 
@@ -426,10 +453,26 @@ async def poll_task_progress(task_id: str):
             result_count = task.get("result_count", 0)
             status_message = task.get("status_message", "")
 
-            # 可视化进度条
-            filled = int(progress / 10)
-            bar = "█" * filled + "░" * (10 - filled)
+            # 若 pending 超过 2 分钟且进度为 0，可能 Worker 未收到，尝试重新提交
             elapsed = int(asyncio.get_event_loop().time() - start_time)
+            if status == "pending" and progress <= 1 and elapsed >= 120:
+                try:
+                    run_search.apply_async(
+                        args=[
+                            task_id,
+                            task.get("user_query", ""),
+                            task.get("target_count", 100),
+                            None, None  # pdf_path, link_url 会话中可能已丢失
+                        ],
+                        queue="search",
+                    )
+                    await db.update(TABLE_SEARCH_TASKS, {"task_id": task_id}, {
+                        "status_message": "已重新提交 Worker，等待处理...",
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    logger.info("pending 超时，已重新提交 Celery 任务", task_id=task_id)
+                except Exception as e:
+                    logger.warning("重新提交任务失败", task_id=task_id, error=str(e))
             elapsed_str = f"{elapsed // 60}分{elapsed % 60}秒" if elapsed >= 60 else f"{elapsed}秒"
 
             status_line = status_message if status_message else {
@@ -440,22 +483,30 @@ async def poll_task_progress(task_id: str):
                 "timeout": "超时"
             }.get(status, status)
 
-            result_line = f"\n已找到买家：**{result_count}** 家" if result_count > 0 else ""
+            result_line = f"已找到 {result_count} 家" if result_count > 0 else ""
+            result_html = f'<div style="font-size:12px;color:var(--primary,#4CAF50);margin-top:4px">{result_line}</div>' if result_line else ""
 
-            progress_text = (
-                f"⏳ **搜索进行中...**\n\n"
-                f"`[{bar}]` **{progress}%**\n"
-                f"状态：{status_line}\n"
-                f"已用时：{elapsed_str}"
-                f"{result_line}\n\n"
-                f"💡 可关闭浏览器，任务后台继续运行"
-            )
+            # 右上角浮动进度条（HTML + custom CSS 定位）
+            progress_html = f'''<div id="msg-progress-float" class="msg-progress-float">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+<span style="font-size:14px">⏳</span>
+<strong style="font-size:14px">搜索进度</strong>
+<span style="margin-left:auto;font-size:12px;opacity:0.8">{elapsed_str}</span>
+</div>
+<div style="height:8px;background:rgba(0,0,0,0.1);border-radius:4px;overflow:hidden;margin-bottom:8px">
+<div style="height:100%;width:{progress}%;background:linear-gradient(90deg,#4CAF50,#8BC34A);transition:width 0.3s;border-radius:4px"></div>
+</div>
+<div style="font-size:12px;opacity:0.9">{status_line} · <strong>{progress}%</strong></div>
+{result_html}
+<div style="font-size:11px;opacity:0.6;margin-top:6px">关闭页面后任务继续运行</div>
+</div>'''
 
             if progress_msg is None:
-                progress_msg = cl.Message(content=progress_text)
+                progress_msg = cl.Message(content=progress_html)
                 await progress_msg.send()
             else:
-                await progress_msg.update(content=progress_text)
+                progress_msg.content = progress_html
+                await progress_msg.update()
 
             if status == "completed":
                 await show_search_results(task_id, result_count)
