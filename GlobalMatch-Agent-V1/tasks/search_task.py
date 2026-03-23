@@ -132,6 +132,7 @@ async def _async_search(task, task_id: str, user_query: str,
         await db.update(TABLE_SEARCH_TASKS,
                         {"task_id": task_id},
                         {"progress": progress,
+                         "status_message": message,
                          "updated_at": datetime.now(timezone.utc).isoformat()})
 
     await progress_update(5, "Kimi AI正在分析产品...")

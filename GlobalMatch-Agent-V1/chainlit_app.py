@@ -83,6 +83,44 @@ async def on_chat_start():
     cl.user_session.set("product_info", {})
     cl.user_session.set("search_params", {})
 
+    # 检查是否有未完成的任务（用户重新打开页面后自动恢复）
+    try:
+        running_tasks = await db.select(
+            TABLE_SEARCH_TASKS,
+            {"status": "running"},
+            limit=1,
+            order_by="created_at",
+            order_desc=True
+        )
+        if not running_tasks:
+            running_tasks = await db.select(
+                TABLE_SEARCH_TASKS,
+                {"status": "pending"},
+                limit=1,
+                order_by="created_at",
+                order_desc=True
+            )
+        if running_tasks:
+            task = running_tasks[0]
+            task_id = task.get("task_id")
+            progress = task.get("progress", 0)
+            user_query = task.get("user_query", "")
+            cl.user_session.set("current_task_id", task_id)
+            cl.user_session.set("state", "searching")
+            await cl.Message(
+                content=f"""🔄 **检测到未完成的搜索任务，自动恢复监控！**
+
+产品：{user_query[:50]}
+任务ID：`{task_id}`
+当前进度：{progress}%
+
+正在恢复进度追踪，请稍候...
+"""
+            ).send()
+            asyncio.create_task(poll_task_progress(task_id))
+    except Exception as e:
+        logger.warning("检查历史任务失败", error=str(e))
+
 
 @cl.on_message
 async def on_message(message: cl.Message):
@@ -100,11 +138,15 @@ async def on_message(message: cl.Message):
         await handle_product_input(message)
     elif state == "waiting_for_count":
         await handle_count_selection(content)
+    elif state == "searching":
+        await handle_searching_state(content)
     elif state == "waiting_for_channel":
         await handle_channel_selection(content)
     elif state == "settings":
         await handle_settings_input(content)
     else:
+        # 未知状态，重置并重新开始
+        cl.user_session.set("state", "waiting_for_product")
         await handle_product_input(message)
 
 
@@ -242,6 +284,49 @@ async def handle_product_input(message: cl.Message):
 
 
 # ==============================================================================
+# 搜索进行中的处理
+# ==============================================================================
+
+async def handle_searching_state(content: str):
+    """搜索进行中，处理用户输入"""
+    task_id = cl.user_session.get("current_task_id")
+
+    # 允许 /状态 类命令（已在上层命令路由处理，这里只处理普通文本）
+    if content.strip() in ("取消", "cancel", "/取消"):
+        await cancel_current_task()
+        return
+
+    # 查询当前进度
+    status_text = "进行中"
+    progress = 0
+    if task_id:
+        try:
+            records = await db.select(TABLE_SEARCH_TASKS, {"task_id": task_id}, limit=1)
+            if records:
+                task = records[0]
+                status = task.get("status", "running")
+                progress = task.get("progress", 0)
+                status_msg = task.get("status_message", "")
+                result_count = task.get("result_count", 0)
+                status_text = f"{progress}% | {status_msg}" if status_msg else f"{progress}%"
+                if status == "completed":
+                    await show_search_results(task_id, result_count)
+                    return
+        except Exception:
+            pass
+
+    filled = int(progress / 10)
+    bar = "█" * filled + "░" * (10 - filled)
+    await cl.Message(
+        content=f"⏳ **搜索正在后台运行中，请耐心等待...**\n\n"
+                f"进度：`[{bar}]` {progress}%\n"
+                f"任务ID：`{task_id}`\n\n"
+                f"💡 输入 `/状态` 刷新进度，输入 `取消` 中止任务\n"
+                f"你也可以关闭浏览器，搜索仍会继续，完成后推送微信通知"
+    ).send()
+
+
+# ==============================================================================
 # 数量选择
 # ==============================================================================
 
@@ -325,6 +410,7 @@ async def poll_task_progress(task_id: str):
     """实时轮询任务进度，每5秒更新一次"""
     max_polls = 360  # 最多轮询30分钟（360 * 5s）
     progress_msg = None
+    start_time = asyncio.get_event_loop().time()
 
     for i in range(max_polls):
         await asyncio.sleep(5)
@@ -338,8 +424,32 @@ async def poll_task_progress(task_id: str):
             status = task.get("status", "pending")
             progress = task.get("progress", 0)
             result_count = task.get("result_count", 0)
+            status_message = task.get("status_message", "")
 
-            progress_text = f"⏳ 搜索进度：**{progress}%** | 状态：{status}"
+            # 可视化进度条
+            filled = int(progress / 10)
+            bar = "█" * filled + "░" * (10 - filled)
+            elapsed = int(asyncio.get_event_loop().time() - start_time)
+            elapsed_str = f"{elapsed // 60}分{elapsed % 60}秒" if elapsed >= 60 else f"{elapsed}秒"
+
+            status_line = status_message if status_message else {
+                "pending": "等待启动...",
+                "running": "搜索中...",
+                "completed": "完成",
+                "failed": "失败",
+                "timeout": "超时"
+            }.get(status, status)
+
+            result_line = f"\n已找到买家：**{result_count}** 家" if result_count > 0 else ""
+
+            progress_text = (
+                f"⏳ **搜索进行中...**\n\n"
+                f"`[{bar}]` **{progress}%**\n"
+                f"状态：{status_line}\n"
+                f"已用时：{elapsed_str}"
+                f"{result_line}\n\n"
+                f"💡 可关闭浏览器，任务后台继续运行"
+            )
 
             if progress_msg is None:
                 progress_msg = cl.Message(content=progress_text)
