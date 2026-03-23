@@ -1,0 +1,49 @@
+image: gitpod/workspace-python-3.11
+
+tasks:
+  - name: Redis
+    init: |
+      sudo apt-get update -q
+      sudo apt-get install -y redis-server
+    command: redis-server --daemonize yes && echo "Redis started"
+
+  - name: Setup & Chainlit
+    init: |
+      cd GlobalMatch-Agent-V1
+      pip install -r requirements.txt
+      playwright install chromium --with-deps
+      if [ ! -f .env ]; then
+        cp .env.example .env
+        echo ""
+        echo "============================================"
+        echo "  请编辑 .env 填入你的 API Key："
+        echo "  gp open .env"
+        echo "============================================"
+      fi
+    command: |
+      cd GlobalMatch-Agent-V1
+      chainlit run chainlit_app.py --host 0.0.0.0 --port 8080
+
+  - name: Celery Worker
+    command: |
+      cd GlobalMatch-Agent-V1
+      sleep 10
+      celery -A tasks.celery_app worker --loglevel=info -Q search,email -c 2
+
+ports:
+  - port: 8080
+    visibility: public
+    name: Chainlit UI
+    description: 主界面
+  - port: 8000
+    visibility: public
+    name: FastAPI
+    description: API接口
+  - port: 6379
+    visibility: private
+    name: Redis
+
+vscode:
+  extensions:
+    - ms-python.python
+    - ms-python.vscode-pylance
