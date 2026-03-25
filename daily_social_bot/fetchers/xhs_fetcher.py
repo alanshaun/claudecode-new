@@ -1,18 +1,28 @@
 """
-小红书抓取器 — 使用登录 Cookie 调用搜索接口
+36kr RSS 抓取器（替代小红书）
+公开 RSS，无需登录，从任何 IP 均可访问
 """
-import os
 import logging
-import re
 from dataclasses import dataclass
 
+import feedparser
 import httpx
 
 logger = logging.getLogger(__name__)
 
+# 36kr 各频道 RSS
+KR36_FEEDS = {
+    "AI创业":   "https://36kr.com/feed",
+    "出海产品":  "https://36kr.com/feed",
+}
+
+# 也可用少数派
+SSPAI_FEED = "https://sspai.com/feed"
+
 
 @dataclass
 class XHSNote:
+    """保持与其他模块的接口兼容"""
     id: str
     title: str
     desc: str
@@ -28,67 +38,57 @@ class XHSNote:
 
 class XHSFetcher:
     def __init__(self):
-        cookie = os.environ.get("XHS_COOKIE", "")
-        if not cookie:
-            raise ValueError("XHS_COOKIE is not set")
-        self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Cookie": cookie,
-            "Referer": "https://www.xiaohongshu.com/explore",
-            "Origin": "https://www.xiaohongshu.com",
-            "Content-Type": "application/json",
-            "x-s": "",
-            "x-t": "0",
-        }
-
-    def search_keyword(self, keyword: str, max_count: int = 5) -> list[XHSNote]:
-        notes: list[XHSNote] = []
-        try:
-            with httpx.Client(timeout=15) as client:
-                resp = client.post(
-                    "https://edith.xiaohongshu.com/api/sns/web/v1/search/notes",
-                    headers=self.headers,
-                    json={
-                        "keyword": keyword,
-                        "page": 1,
-                        "page_size": max_count,
-                        "search_id": keyword,
-                        "sort": "hot",
-                        "note_type": 0,
-                    },
-                )
-                data = resp.json()
-
-            items = data.get("data", {}).get("items", [])
-            logger.info(f"XHS '{keyword}': {len(items)} items (status {resp.status_code}), raw: {str(data)[:200]}")
-
-            for item in items[:max_count]:
-                note = item.get("note_card", {})
-                note_id = item.get("id", "")
-                if not note_id:
-                    continue
-                interact = note.get("interact_info", {})
-                notes.append(XHSNote(
-                    id=note_id,
-                    title=note.get("display_title", ""),
-                    desc=note.get("desc", ""),
-                    author=note.get("user", {}).get("nickname", ""),
-                    liked_count=int(re.sub(r"\D", "", str(interact.get("liked_count", "0"))) or 0),
-                    collected_count=int(re.sub(r"\D", "", str(interact.get("collected_count", "0"))) or 0),
-                    url=f"https://www.xiaohongshu.com/explore/{note_id}",
-                ))
-        except Exception as e:
-            logger.error(f"XHS search failed for '{keyword}': {e}")
-
-        return notes
+        pass  # 不需要 Cookie
 
     def fetch_keywords(self, keywords: list[str], max_per_keyword: int = 5) -> list[XHSNote]:
-        all_notes: list[XHSNote] = []
-        for kw in keywords:
-            notes = self.search_keyword(kw, max_per_keyword)
-            all_notes.extend(notes)
-        return all_notes
+        """从 36kr RSS 抓取最新文章"""
+        notes: list[XHSNote] = []
+        seen_ids: set[str] = set()
+        total = max_per_keyword * len(keywords)
+
+        feeds_to_try = [
+            ("https://36kr.com/feed", "36kr"),
+            (SSPAI_FEED, "少数派"),
+        ]
+
+        for feed_url, source_name in feeds_to_try:
+            if len(notes) >= total:
+                break
+            try:
+                resp = httpx.get(feed_url, timeout=10, follow_redirects=True,
+                                 headers={"User-Agent": "Mozilla/5.0"})
+                feed = feedparser.parse(resp.text)
+                for entry in feed.entries:
+                    if len(notes) >= total:
+                        break
+                    entry_id = entry.get("id") or entry.get("link", "")
+                    if entry_id in seen_ids:
+                        continue
+                    seen_ids.add(entry_id)
+
+                    title = entry.get("title", "")
+                    summary = entry.get("summary", "")
+                    # 去除 HTML 标签
+                    import re
+                    desc = re.sub(r"<[^>]+>", "", summary).strip()[:300]
+                    link = entry.get("link", "")
+                    author = entry.get("author", source_name)
+
+                    notes.append(XHSNote(
+                        id=entry_id,
+                        title=title,
+                        desc=desc,
+                        author=author,
+                        liked_count=0,
+                        collected_count=0,
+                        url=link,
+                    ))
+                logger.info(f"{source_name} RSS: fetched {len(feed.entries)} entries")
+            except Exception as e:
+                logger.error(f"RSS fetch failed for {feed_url}: {e}")
+
+        logger.info(f"Total RSS notes: {len(notes)}")
+        return notes
+
+    def search_keyword(self, keyword: str, max_count: int = 5) -> list[XHSNote]:
+        return self.fetch_keywords([keyword], max_count)
