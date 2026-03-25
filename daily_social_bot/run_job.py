@@ -1,6 +1,6 @@
 """
-GitHub Actions 入口 — 话题轮转模式
-每次运行从预设话题列表里取一个，生成推文发飞书确认
+GitHub Actions 入口 — 混合模式
+优先从博主 Twitter RSS + 博客 RSS 抓素材，不够则用话题兜底
 """
 import datetime
 import logging
@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 话题池 — 围绕一人公司 / AI / 商业 / 内容变现
+# 话题池兜底用
 TOPICS = [
     "一人公司的工具链和成本控制：用最低的固定成本搭起能赚钱的系统",
     "AI工具的真实效率：哪些真的改变了工作方式，哪些是噱头",
@@ -36,44 +36,134 @@ TOPICS = [
 
 def pick_topic(topics: list[str]) -> str:
     now = datetime.datetime.now()
-    # 用「今天是第几天 × 5 + 当前时段」做偏移，确保同一天5次运行话题各不同
     hour_slot = {9: 0, 10: 0, 11: 1, 12: 1, 13: 2, 14: 2, 15: 2, 16: 3, 17: 3, 18: 3, 19: 4, 20: 4, 21: 4, 22: 4}.get(now.hour, 0)
     idx = (now.timetuple().tm_yday * 5 + hour_slot) % len(topics)
     return topics[idx]
+
+
+def fetch_content(config: dict) -> list:
+    """抓 Twitter RSS + 博客 RSS，返回原始条目列表"""
+    items = []
+
+    # 1. Twitter 用户 RSS（Nitter）
+    tw_cfg = config["sources"].get("twitter_users", {})
+    if tw_cfg.get("enabled", False):
+        from fetchers.twitter_rss_fetcher import fetch_all_users
+        accounts = tw_cfg.get("accounts", [])
+        max_per = tw_cfg.get("max_per_account", 3)
+        tweets = fetch_all_users(accounts, max_per)
+        logger.info(f"Twitter RSS: {len(tweets)} tweets from {len(accounts)} accounts")
+        for t in tweets:
+            items.append({
+                "source": t.author,
+                "title": t.text,
+                "body": t.desc,
+                "url": t.url,
+            })
+
+    # 2. 博客 RSS
+    rss_cfg = config["sources"].get("rss", {})
+    feeds = rss_cfg.get("feeds", [])
+    max_per_feed = rss_cfg.get("max_per_feed", 3)
+    if feeds:
+        import feedparser, httpx, re
+        for feed_info in feeds:
+            try:
+                resp = httpx.get(feed_info["url"], timeout=10, follow_redirects=True,
+                                 headers={"User-Agent": "Mozilla/5.0 RSS Reader"})
+                if resp.status_code != 200:
+                    continue
+                feed = feedparser.parse(resp.text)
+                count = 0
+                for entry in feed.entries:
+                    if count >= max_per_feed:
+                        break
+                    title = entry.get("title", "").strip()
+                    summary = entry.get("summary", entry.get("description", ""))
+                    body = re.sub(r"<[^>]+>", " ", summary).strip()[:600]
+                    link = entry.get("link", "")
+                    if title:
+                        items.append({
+                            "source": feed_info["name"],
+                            "title": title,
+                            "body": body,
+                            "url": link,
+                        })
+                        count += 1
+                logger.info(f"Blog RSS [{feed_info['name']}]: {count} entries")
+            except Exception as e:
+                logger.debug(f"Blog RSS [{feed_info['name']}]: {e}")
+
+    return items
 
 
 def main():
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
 
-    # 1. 选话题
-    topics = config.get("topics", TOPICS)
-    topic = pick_topic(topics)
-    logger.info(f"Today's topic: {topic}")
-
-    # 2. 生成推文
-    from ai.generator import generate_tweets
-    from ai.selector import SelectedContent
-
-    content = SelectedContent(
-        source_type="topic",
-        title=topic,
-        body="",
-        url="",
-        reason=topic,
-    )
     gen = config["generator"]
+
+    # 1. 尝试抓外部素材
+    raw_items = fetch_content(config)
+    logger.info(f"Total raw items: {len(raw_items)}")
+
+    from ai.generator import generate_tweets
+    from ai.selector import SelectedContent, select_best
+    from fetchers.twitter_rss_fetcher import UserTweet
+
+    if len(raw_items) >= 3:
+        # 2a. 有足够素材 → AI 选一条最有价值的，基于它写推文
+        selector_items = [
+            UserTweet(
+                id=d["url"],
+                author=d["source"],
+                title=d["title"],
+                desc=d["body"],
+                url=d["url"],
+            )
+            for d in raw_items
+        ]
+        selected = select_best(selector_items, config["selector"]["criteria"])
+        if selected:
+            content = SelectedContent(
+                source_type="external",
+                title=selected.title,
+                body=selected.body,
+                url=selected.url,
+                reason=f"来自 {selected.source}",
+            )
+            topic_label = f"{selected.source} · {selected.title[:40]}"
+            logger.info(f"Selected: {topic_label}")
+        else:
+            # selector 没选出来，用话题兜底
+            raw_items = []
+
+    if len(raw_items) < 3:
+        # 2b. 素材不够 → 话题兜底
+        topics = config.get("topics", TOPICS)
+        topic = pick_topic(topics)
+        logger.info(f"Fallback to topic: {topic}")
+        content = SelectedContent(
+            source_type="topic",
+            title=topic,
+            body="",
+            url="",
+            reason=topic,
+        )
+        topic_label = topic
+
+    # 3. 生成推文
     tweets = generate_tweets(content, gen["style"], gen["tweet_count"])
     if not tweets:
         logger.error("Generator returned no tweets — exit")
         sys.exit(1)
     logger.info(f"Generated {len(tweets)} tweets")
 
-    # 3. 发飞书卡片
+    # 4. 发飞书卡片
     from notifier.feishu import send_daily_drafts
-    ok = send_daily_drafts(tweets, topic, "")
+    ok = send_daily_drafts(tweets, topic_label, content.url)
     if ok:
-        logger.info("Feishu card sent — waiting for confirmation")
+        logger.info("Feishu card sent")
     else:
         logger.error("Failed to send Feishu card")
         sys.exit(1)

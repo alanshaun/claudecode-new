@@ -14,10 +14,9 @@ sources:
     accounts: []          # 保留字段，实际由 HackerNews 抓取
     max_per_account: 15   # 抓取 HN top N 条
 
-  # X/Twitter 关注账号（via RSSHub / Nitter 转 RSS）
-  # enabled: false — rsshub.app 已封 Twitter 路由，暂时禁用，避免浪费时间
+  # X/Twitter 关注账号（via 多个 Nitter 实例转 RSS，失败则跳过）
   twitter_users:
-    enabled: false
+    enabled: true
     accounts:
       # ── 之前加的 ─────────────────────────────
       - zarazhangrui      # 扎拉张睿，AI内容策展
@@ -85,24 +84,39 @@ sources:
       - vikingmute        # 独立开发者
     max_per_account: 3
 
-  # RSS 订阅（中文科技/商业/AI/独立开发）
+  # RSS 订阅 — 优先抓博主自己的博客/Newsletter（比 Twitter 稳定）
   rss:
     feeds:
-      - url: "https://36kr.com/feed"
-        name: "36氪"
-      - url: "https://www.huxiu.com/rss/article.xml"
-        name: "虎嗅"
-      - url: "https://sspai.com/feed"
-        name: "少数派"
-      - url: "https://www.producthunt.com/feed"
-        name: "Product Hunt"
+      # ── 英文 solopreneur 博主博客 ─────────────────────────
+      - url: "https://thebootstrappedfounder.com/feed/"
+        name: "Arvid Kahl (arvidkahl)"
+      - url: "https://www.kalzumeus.com/feed/"
+        name: "Patrick McKenzie (patio11)"
+      - url: "https://www.swyx.io/rss.xml"
+        name: "swyx"
+      - url: "https://justinjackson.ca/feed/"
+        name: "Justin Jackson (mijustin)"
+      - url: "https://levels.io/rss/"
+        name: "Pieter Levels (levelsio)"
+      - url: "https://marketingexamples.com/feed"
+        name: "Harry Dry (harrydry)"
+      - url: "https://perell.com/feed/"
+        name: "David Perell"
       - url: "https://www.indiehackers.com/feed.rss"
-        name: "Indie Hackers"
+        name: "Indie Hackers (csallen)"
+      - url: "https://www.aaronsw.com/2002/feeds/pgessays.rss"
+        name: "Paul Graham Essays"
+      - url: "https://randfish.com/feed/"
+        name: "Rand Fishkin (randfish)"
+      - url: "https://coryzue.com/feed.xml"
+        name: "Cory Zue (coryzue)"
+      - url: "https://dvassallo.substack.com/feed"
+        name: "Daniel Vassallo (dvassallo)"
+      - url: "https://sahillavingia.com/feed"
+        name: "Sahil Lavingia (shl)"
       - url: "https://tldr.tech/api/rss/founders"
         name: "TLDR Founders"
-      - url: "https://www.deeplearning.ai/the-batch/feed/"
-        name: "The Batch (吴恩达)"
-    max_per_feed: 5
+    max_per_feed: 3
 
   # 保留字段兼容
   xiaohongshu:
