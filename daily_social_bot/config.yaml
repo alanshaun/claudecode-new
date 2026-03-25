@@ -49,6 +49,38 @@ sources:
       - sharbel           # Sharbel，FounderFunnel/AI自动化
       - liqiang89391017   # 溯溟，中年创业成长
       - Stanleysobest     # Stanley
+      # ── 一人公司 / 独立创业（英文）────────────────────────
+      - levelsio          # Pieter Levels，nomad.list/remote.com，solopreneur 标杆
+      - tdinh_me          # Tony Dinh，indie hacker，多款独立产品
+      - marc_louvion      # Marc Lou，快速连续发布产品
+      - dvassallo         # Daniel Vassallo，离开亚马逊做solopreneur
+      - arvidkahl         # Arvid Kahl，The Bootstrapped Founder
+      - patio11           # Patrick McKenzie，indie hacker 传奇
+      - csallen           # Courtland Allen，Indie Hackers 创始人
+      - thepatwalls       # Pat Walls，Starter Story
+      - harrydry          # Harry Dry，Marketing Examples
+      - shl               # Sahil Lavingia，Gumroad 创始人
+      - coryzue           # Cory Zue，Django SaaS 模板
+      - mijustin          # Justin Jackson，Transistor.fm 联创
+      - tibo_maker        # Tibo，Tweet Hunter
+      - swyx              # Shawn Wang，swyx.io
+      - bentossell        # Ben Tossell，Makerpad
+      - gregisenberg      # Greg Isenberg，社区驱动增长
+      - theSamParr        # Sam Parr，The Hustle 创始人
+      - paulg             # Paul Graham，YC/黑客与画家
+      - amasad            # Amjad Masad，Replit 创始人
+      - randfish          # Rand Fishkin，SparkToro
+      - NathanLatka       # Nathan Latka，SaaS 收入数据
+      - george__mack      # George Mack，心智模型/创业
+      - david_perell      # David Perell，写作+个人品牌
+      - jackbutcher       # Jack Butcher，Visualize Value
+      - naval             # Naval Ravikant，创业/财富/哲学
+      - jason             # Jason Calacanis，天使投资/创业
+      - hnshah            # Hiten Shah，产品/增长
+      # ── 中文独立开发者 ───────────────────────────────────
+      - mazzzystar        # 枫叶，独立开发者（Reeder等）
+      - novoreorx         # 独立开发者，工具控
+      - vikingmute        # 独立开发者
     max_per_account: 3
 
   # RSS 订阅（中文科技/商业/AI/独立开发）
