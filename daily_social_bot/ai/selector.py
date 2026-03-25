@@ -1,13 +1,12 @@
 """
-内容筛选器 — 用 Claude 从抓取结果中选最值得发的一条
+内容筛选器 — 从抓取结果中选最值得发的一条
 """
 import json
 import logging
 from dataclasses import dataclass
 from typing import Union
 
-import anthropic
-
+from ai.llm_client import call_llm
 from fetchers.twitter_fetcher import Tweet
 from fetchers.xhs_fetcher import XHSNote
 
@@ -22,7 +21,7 @@ class SelectedContent:
     title: str
     body: str
     url: str
-    reason: str               # Claude 选择理由
+    reason: str
 
 
 def _format_items(items: list[ContentItem]) -> str:
@@ -46,16 +45,11 @@ def _format_items(items: list[ContentItem]) -> str:
     return "\n\n".join(lines)
 
 
-def select_best(
-    items: list[ContentItem],
-    criteria: str,
-    model: str = "claude-opus-4-6",
-) -> SelectedContent | None:
+def select_best(items: list[ContentItem], criteria: str, **_) -> SelectedContent | None:
     if not items:
         logger.warning("No items to select from")
         return None
 
-    client = anthropic.Anthropic()
     prompt = f"""你是一个科技/创业领域的内容策展人。
 
 筛选标准：
@@ -72,13 +66,10 @@ def select_best(
 
 只输出 JSON，不要其他文字。"""
 
-    resp = client.messages.create(
-        model=model,
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = resp.content[0].text.strip()
+    raw = call_llm(prompt, max_tokens=256)
     try:
+        # 去掉可能的 markdown 代码块
+        raw = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
         data = json.loads(raw)
         idx = int(data["index"])
         item = items[idx]

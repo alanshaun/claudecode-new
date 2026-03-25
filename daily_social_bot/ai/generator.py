@@ -1,25 +1,16 @@
 """
-推文生成器 — 用 Claude 按用户风格生成 N 条候选推文
+推文生成器 — 按用户风格生成 N 条候选推文
 """
 import json
 import logging
 
-import anthropic
-
+from ai.llm_client import call_llm
 from ai.selector import SelectedContent
 
 logger = logging.getLogger(__name__)
 
 
-def generate_tweets(
-    content: SelectedContent,
-    style_guide: str,
-    count: int = 3,
-    model: str = "claude-opus-4-6",
-) -> list[str]:
-    """返回 count 条候选推文文本列表"""
-    client = anthropic.Anthropic()
-
+def generate_tweets(content: SelectedContent, style_guide: str, count: int = 3, **_) -> list[str]:
     prompt = f"""你是一个帮助用户写推文的助手。
 
 原始素材：
@@ -36,13 +27,9 @@ def generate_tweets(
 
 只输出 JSON 数组，不要序号、标题或其他文字。"""
 
-    resp = client.messages.create(
-        model=model,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = resp.content[0].text.strip()
+    raw = call_llm(prompt, max_tokens=1024)
     try:
+        raw = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
         tweets = json.loads(raw)
         if isinstance(tweets, list):
             return [str(t) for t in tweets[:count]]
