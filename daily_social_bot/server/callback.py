@@ -1,69 +1,102 @@
 """
-飞书回调服务器 (FastAPI)
-接收用户点击交互卡片按钮的事件 → 触发发布
+Render 上的 FastAPI 服务
+职责：接收飞书按钮回调 → 从 value 中取出推文正文 → 发布到 X
 """
 import hashlib
+import hmac
 import json
 import logging
 import os
 
+import httpx
 from fastapi import FastAPI, Request, Response
 
 logger = logging.getLogger(__name__)
 app = FastAPI()
 
-_pending: dict = {
-    "tweets": [],
-    "on_confirm": None,
-}
+
+def _post_tweet(text: str) -> str:
+    """返回发布后的推文 URL"""
+    import tweepy
+    client = tweepy.Client(
+        consumer_key=os.environ["TWITTER_API_KEY"],
+        consumer_secret=os.environ["TWITTER_API_SECRET"],
+        access_token=os.environ["TWITTER_ACCESS_TOKEN"],
+        access_token_secret=os.environ["TWITTER_ACCESS_TOKEN_SECRET"],
+    )
+    resp = client.create_tweet(text=text)
+    tweet_id = resp.data["id"]
+    me = client.get_me()
+    username = me.data.username if me.data else "unknown"
+    return f"https://x.com/{username}/status/{tweet_id}"
 
 
-def set_pending(tweets: list[str], on_confirm) -> None:
-    _pending["tweets"] = tweets
-    _pending["on_confirm"] = on_confirm
+def _notify_feishu(text: str):
+    app_id = os.environ.get("FEISHU_APP_ID", "")
+    app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+    user_id = os.environ.get("FEISHU_USER_ID", "")
+    if not all([app_id, app_secret, user_id]):
+        return
+    try:
+        token_resp = httpx.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            json={"app_id": app_id, "app_secret": app_secret},
+            timeout=10,
+        )
+        token = token_resp.json()["tenant_access_token"]
+        httpx.post(
+            "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "receive_id": user_id,
+                "msg_type": "text",
+                "content": json.dumps({"text": text}),
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        logger.error(f"Feishu notify failed: {e}")
+
+
+@app.get("/")
+async def health():
+    return {"status": "ok"}
 
 
 @app.post("/feishu/callback")
 async def feishu_callback(request: Request):
     body = await request.json()
 
-    # 飞书 URL 验证握手
+    # URL 验证握手
     if body.get("type") == "url_verification":
         return {"challenge": body.get("challenge")}
 
-    event = body.get("event", {})
-    action = event.get("action", {})
-    value = action.get("value", {})
+    # 兼容两种飞书回调格式
+    value = (
+        body.get("action", {}).get("value")
+        or body.get("event", {}).get("action", {}).get("value")
+        or {}
+    )
 
-    if not value:
-        # 兼容卡片回调格式
-        action = body.get("action", {})
-        value = action.get("value", {})
+    action = value.get("action", "")
 
-    if not value:
-        return Response(content="ok")
-
-    act = value.get("action", "")
-    if act == "skip":
+    if action == "skip":
         logger.info("User skipped today's post")
-        _pending["tweets"] = []
-        _pending["on_confirm"] = None
-        return {"toast": {"type": "info", "content": "已跳过今日推文"}}
+        _notify_feishu("⏭️ 已跳过今日推文")
+        return {"toast": {"type": "info", "content": "已跳过"}}
 
-    if act == "post_tweet":
-        idx = int(value.get("index", "1")) - 1
-        tweets = _pending.get("tweets", [])
-        on_confirm = _pending.get("on_confirm")
-        if on_confirm and 0 <= idx < len(tweets):
-            tweet = tweets[idx]
-            logger.info(f"User confirmed tweet [{idx+1}]")
-            _pending["tweets"] = []
-            _pending["on_confirm"] = None
-            try:
-                on_confirm(tweet)
-                return {"toast": {"type": "success", "content": "推文已发布！"}}
-            except Exception as e:
-                logger.error(f"Post failed: {e}")
-                return {"toast": {"type": "error", "content": f"发布失败：{e}"}}
+    if action == "post_tweet":
+        tweet = value.get("tweet", "")
+        if not tweet:
+            return {"toast": {"type": "error", "content": "推文内容为空"}}
+        try:
+            url = _post_tweet(tweet)
+            logger.info(f"Tweet posted: {url}")
+            _notify_feishu(f"✅ 推文已发布！\n{url}\n\n内容：{tweet}")
+            return {"toast": {"type": "success", "content": "推文已发布！"}}
+        except Exception as e:
+            logger.error(f"Post failed: {e}")
+            _notify_feishu(f"❌ 发布失败：{e}")
+            return {"toast": {"type": "error", "content": f"发布失败：{e}"}}
 
     return Response(content="ok")

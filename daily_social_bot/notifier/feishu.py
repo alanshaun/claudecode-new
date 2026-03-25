@@ -1,14 +1,13 @@
 """
-飞书通知 + 交互卡片
-发送推文草稿给用户，用户点按钮确认后触发发布
+飞书通知 — 交互卡片，推文内容直接嵌入按钮 value（无服务器状态）
 """
+import json
 import os
 import time
 import logging
 import httpx
 
 logger = logging.getLogger(__name__)
-
 FEISHU_API = "https://open.feishu.cn/open-apis"
 _token_cache: dict = {"token": "", "expires_at": 0}
 
@@ -30,15 +29,15 @@ def _get_token() -> str:
 
 
 def send_text(text: str) -> bool:
-    user_id = os.environ["FEISHU_USER_ID"]
     token = _get_token()
+    user_id = os.environ["FEISHU_USER_ID"]
     resp = httpx.post(
         f"{FEISHU_API}/im/v1/messages?receive_id_type=open_id",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "receive_id": user_id,
             "msg_type": "text",
-            "content": f'{{"text": "{text}"}}',
+            "content": json.dumps({"text": text}),
         },
         timeout=10,
     )
@@ -49,18 +48,40 @@ def send_text(text: str) -> bool:
 
 
 def send_daily_drafts(tweets: list[str], source_title: str, source_url: str) -> bool:
-    """发送交互卡片，每条推文一个按钮"""
-    user_id = os.environ["FEISHU_USER_ID"]
+    """
+    发送交互卡片。
+    每个按钮的 value 直接携带推文正文，Render 收到回调后无需查库即可发推。
+    """
     token = _get_token()
+    user_id = os.environ["FEISHU_USER_ID"]
 
-    # 构建按钮列表
+    # 构建卡片元素
+    elements = [
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": f"**📰 今日素材**\n{source_title}\n[查看原文]({source_url})",
+            },
+        },
+        {"tag": "hr"},
+    ]
+
+    for i, tweet in enumerate(tweets, 1):
+        elements.append({
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"**[{i}]**\n{tweet}"},
+        })
+
+    # 按钮行：每条推文一个按钮 + 跳过
     actions = []
     for i, tweet in enumerate(tweets, 1):
         actions.append({
             "tag": "button",
             "text": {"tag": "plain_text", "content": f"发布第 {i} 条"},
             "type": "primary",
-            "value": {"action": "post_tweet", "index": str(i)},
+            # 推文正文直接放在 value 里，Render 回调时取出直接发推
+            "value": {"action": "post_tweet", "tweet": tweet},
         })
     actions.append({
         "tag": "button",
@@ -69,20 +90,7 @@ def send_daily_drafts(tweets: list[str], source_title: str, source_url: str) -> 
         "value": {"action": "skip"},
     })
 
-    # 构建卡片内容
-    elements = [
-        {
-            "tag": "div",
-            "text": {"tag": "lark_md", "content": f"**📰 今日素材**\n{source_title}\n[查看原文]({source_url})"},
-        },
-        {"tag": "hr"},
-    ]
-    for i, tweet in enumerate(tweets, 1):
-        elements.append({
-            "tag": "div",
-            "text": {"tag": "lark_md", "content": f"**[{i}]**\n{tweet}"},
-        })
-        elements.append({"tag": "hr"})
+    elements.append({"tag": "hr"})
     elements.append({"tag": "action", "actions": actions})
 
     card = {
@@ -100,7 +108,7 @@ def send_daily_drafts(tweets: list[str], source_title: str, source_url: str) -> 
         json={
             "receive_id": user_id,
             "msg_type": "interactive",
-            "content": __import__("json").dumps(card),
+            "content": json.dumps(card),
         },
         timeout=10,
     )
