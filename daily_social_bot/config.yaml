@@ -17,6 +17,7 @@ sources:
   # X/Twitter 关注账号（via RSSHub / Nitter 转 RSS，失败自动跳过）
   twitter_users:
     accounts:
+      # ── 之前加的 ─────────────────────────────
       - zarazhangrui      # 扎拉张睿，AI内容策展
       - shangdu2005       # 领哥，AI领域咨询与干货
       - zstmfhy           # AI奶爸
@@ -28,6 +29,26 @@ sources:
       - servasyy_ai       # 偏技术的AI分享
       - yihui_indie       # 独立开发/一人公司
       - dankoehoe         # dankoe，内容创作/solopreneur
+      # ── 新加 ─────────────────────────────────
+      - AYi_AInotes       # 阿绎 AYi，AI笔记
+      - mathemagic1an     # Jay Hack，ClickUp Head of AI
+      - soumithchintala   # Soumith，PyTorch联创
+      - giffmana          # Lucas Beyer，Meta/前OpenAI研究员
+      - woj_zaremba       # Wojciech Zaremba，OpenAI联创
+      - nearcyan          # near
+      - AnthropicAI       # Anthropic官方
+      - tuqu_AI           # 图趣AI，ComfyUI/AI生图视频
+      - dhhk_xyz          # Dhhk，创业者 @deepractice
+      - Tz_2022           # AI加速/科幻/洞察
+      - elliotchen100     # 艾略特，Agents长期记忆 EverMind
+      - austinit          # Austin，独立开发者
+      - dingyi            # Ding，quail/saaspick/独立产品
+      - qunzhongchigua2   # 烟枪先森，电商+AI变现
+      - GoldGodTrader     # 黄金神棍，期货交易（AI筛选会过滤）
+      - qloog             # Richard，OpenClaw/独立开发
+      - sharbel           # Sharbel，FounderFunnel/AI自动化
+      - liqiang89391017   # 溯溟，中年创业成长
+      - Stanleysobest     # Stanley
     max_per_account: 3
 
   # RSS 订阅（中文科技/商业/AI/独立开发）
