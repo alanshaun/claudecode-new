@@ -1,16 +1,24 @@
 """
-Twitter / X 抓取器
-使用 Twitter API v2 via tweepy
+Twitter / X 抓取器 — 通过 Nitter RSS 读取推文（无需付费 API）
+多个 Nitter 实例轮询，任一可用即止
 """
-import os
 import logging
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
-import tweepy
+import feedparser
+import httpx
 
 logger = logging.getLogger(__name__)
+
+NITTER_INSTANCES = [
+    "https://nitter.privacydev.net",
+    "https://nitter.poast.org",
+    "https://nitter.lucabased.xyz",
+    "https://nitter.net",
+]
 
 
 @dataclass
@@ -19,58 +27,66 @@ class Tweet:
     author: str
     text: str
     created_at: datetime
-    like_count: int
-    retweet_count: int
-    reply_count: int
-    url: str
+    like_count: int = 0
+    retweet_count: int = 0
+    reply_count: int = 0
+    url: str = ""
 
     @property
     def engagement(self) -> int:
         return self.like_count + self.retweet_count * 2 + self.reply_count
 
 
+def _fetch_rss(username: str, max_count: int) -> list[Tweet]:
+    for base in NITTER_INSTANCES:
+        url = f"{base}/{username}/rss"
+        try:
+            resp = httpx.get(url, timeout=10, follow_redirects=True)
+            if resp.status_code != 200:
+                continue
+            feed = feedparser.parse(resp.text)
+            if not feed.entries:
+                continue
+
+            tweets = []
+            for entry in feed.entries[:max_count]:
+                title = entry.get("title", "")
+                if title.startswith("RT by"):
+                    continue
+                try:
+                    created = parsedate_to_datetime(entry.get("published", ""))
+                except Exception:
+                    created = datetime.now(timezone.utc)
+
+                link = entry.get("link", "")
+                tweet_id = link.split("/")[-1] if link else ""
+                summary = entry.get("summary", "")
+                text = re.sub(r"<[^>]+>", "", summary).strip()
+
+                tweets.append(Tweet(
+                    id=tweet_id,
+                    author=username,
+                    text=text or title,
+                    created_at=created,
+                    url=f"https://x.com/{username}/status/{tweet_id}",
+                ))
+
+            logger.info(f"Twitter RSS @{username}: {len(tweets)} tweets via {base}")
+            return tweets
+
+        except Exception as e:
+            logger.warning(f"Nitter {base} failed for @{username}: {e}")
+            continue
+
+    logger.error(f"All Nitter instances failed for @{username}")
+    return []
+
+
 class TwitterFetcher:
-    def __init__(self):
-        bearer = os.environ["TWITTER_BEARER_TOKEN"]
-        self.client = tweepy.Client(bearer_token=bearer, wait_on_rate_limit=True)
-
     def fetch_accounts(self, accounts: list[str], max_per_account: int = 10) -> list[Tweet]:
-        """抓取指定账号近 24 小时内的推文"""
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        tweets: list[Tweet] = []
-
+        all_tweets: list[Tweet] = []
         for username in accounts:
-            try:
-                user_resp = self.client.get_user(username=username)
-                if not user_resp.data:
-                    logger.warning(f"User not found: {username}")
-                    continue
-                user_id = user_resp.data.id
-
-                resp = self.client.get_users_tweets(
-                    id=user_id,
-                    max_results=max_per_account,
-                    start_time=cutoff,
-                    tweet_fields=["created_at", "public_metrics", "text"],
-                    exclude=["retweets", "replies"],
-                )
-                if not resp.data:
-                    continue
-
-                for t in resp.data:
-                    m = t.public_metrics or {}
-                    tweets.append(Tweet(
-                        id=str(t.id),
-                        author=username,
-                        text=t.text,
-                        created_at=t.created_at,
-                        like_count=m.get("like_count", 0),
-                        retweet_count=m.get("retweet_count", 0),
-                        reply_count=m.get("reply_count", 0),
-                        url=f"https://x.com/{username}/status/{t.id}",
-                    ))
-            except Exception as e:
-                logger.error(f"Failed to fetch tweets for @{username}: {e}")
-
-        logger.info(f"Twitter: fetched {len(tweets)} tweets from {accounts}")
-        return tweets
+            tweets = _fetch_rss(username, max_per_account)
+            all_tweets.extend(tweets)
+        logger.info(f"Twitter total: {len(all_tweets)} tweets from {accounts}")
+        return all_tweets
