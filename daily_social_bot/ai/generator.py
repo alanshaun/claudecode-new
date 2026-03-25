@@ -10,30 +10,43 @@ from ai.selector import SelectedContent
 logger = logging.getLogger(__name__)
 
 
-def generate_tweets(content: SelectedContent, style_guide: str, count: int = 3, **_) -> list[str]:
-    prompt = f"""你是一个在 X 上写作的创业者/独立开发者，正在写今天的推文。
+def _extract_topic(content: SelectedContent) -> str:
+    """把具体文章标题提炼成抽象话题方向，去掉产品/项目名。"""
+    prompt = f"""把下面这条内容的核心话题，提炼成1-2句话的思考方向。
+要求：去掉所有具体产品名/公司名/项目名，只保留抽象的主题和关键数字。
 
-今天看到的内容（用它来写推文，但要写成你自己的感受和判断，不是复述）：
-标题：{content.title}
-正文摘要：{content.body[:600]}
+原标题：{content.title}
+背景：{content.body[:300]}
+策展理由：{content.reason}
+
+直接输出提炼后的话题方向，不要其他内容。"""
+    result = call_llm(prompt, max_tokens=150)
+    return result.strip() or content.reason
+
+
+def generate_tweets(content: SelectedContent, style_guide: str, count: int = 3, **_) -> list[str]:
+    topic = _extract_topic(content)
+
+    prompt = f"""你是一个在做一人公司的创业者，今天想写 X 推文，分享自己对 AI/一人公司/商业 的真实思考。
+
+今天想聊的话题方向：
+{topic}
 
 {style_guide}
 
-写 {count} 条推文草稿，角度各不同（暴论型、反直觉型、发现分享型各选其一）。
+写 {count} 条推文，角度分别是：暴论型、反直觉型、感悟型。
 
-检查清单（每条都要过，不过就重写）：
-□ 有没有「我」或强开头（「说个暴论」「说实话」「刚看到」「一个反直觉」）？
-□ 有没有至少一个具体数字或工具名？
-□ 有没有以下烂尾/AI腔？有就删掉重写：
-  - "这意味着…" / "标志着…"
-  - "值得我们每一个X学习"
-  - "不仅…也…"的套句
-  - "这种X的思维，值得Y"
-  - "让我意识到，为他们…不仅能…也是…"
-  - "这种X让我确信，Y远超我们想象"
-□ 结尾是否有劲？好结尾 = 一句自己的结论/反问/或让人想转发的话
-□ 整体能量：读出来是否有力量感，还是像在写学生作文？
-□ 有没有编造「我亲自做了XX」「我曾经XX」之类的虚假个人经历？有就改成「看到有人做了…」或第三方视角
+【必须做到】
+- 写的是你自己的想法和判断，不是在转述任何文章或工具
+- 每条有「我」或强开头（「说个暴论」「说实话」「我越来越相信」）
+- 有至少一个具体数字（钱、时间、比例）
+- 结尾是一句有力的个人结论，不是大道理
+
+【正面示例】
+"说个暴论：半年前我还在想是不是要买 A100。
+现在整个 AI 工作流跑在 $50/月 的 VPS 上。
+成本降了 95%，一分钟能处理的请求量反而翻了三倍。
+一人公司最大的误判，是以为 AI 基础设施很贵。"
 
 输出 JSON 数组，包含 {count} 个字符串。只输出数组，不要其他内容。"""
 
