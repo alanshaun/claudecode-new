@@ -14,8 +14,10 @@ sources:
     accounts: []          # 保留字段，实际由 HackerNews 抓取
     max_per_account: 15   # 抓取 HN top N 条
 
-  # X/Twitter 关注账号（via RSSHub / Nitter 转 RSS，失败自动跳过）
+  # X/Twitter 关注账号（via RSSHub / Nitter 转 RSS）
+  # enabled: false — rsshub.app 已封 Twitter 路由，暂时禁用，避免浪费时间
   twitter_users:
+    enabled: false
     accounts:
       # ── 之前加的 ─────────────────────────────
       - zarazhangrui      # 扎拉张睿，AI内容策展

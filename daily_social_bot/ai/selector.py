@@ -3,6 +3,7 @@
 """
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Union
 
@@ -13,6 +14,51 @@ from fetchers.xhs_fetcher import XHSNote
 
 logger = logging.getLogger(__name__)
 ContentItem = Union[Tweet, XHSNote, UserTweet]
+
+# 关键词预过滤 — 至少命中一个才进入 AI 筛选
+_KEEP_KEYWORDS = [
+    # AI
+    "ai", "llm", "gpt", "claude", "gemini", "agent", "模型", "大模型", "人工智能",
+    "openai", "anthropic", "mistral", "ollama", "rag", "embedding", "推理",
+    # 创业/产品
+    "创业", "startup", "founder", "indie", "solopreneur", "一人公司", "产品",
+    "saas", "bootstrap", "indiehacker", "side project", "副业", "变现", "monetize",
+    # 增长/冷启动
+    "增长", "growth", "冷启动", "获客", "用户", "arr", "mrr", "revenue", "收入",
+    # 开发者工具/GitHub
+    "github", "open source", "开源", "developer", "工具", "framework",
+    # 趋势/洞察
+    "trend", "insight", "分析", "调研", "报告",
+]
+
+_BLOCK_KEYWORDS = [
+    "激光雷达", "vcsel", "芯片制造", "晶圆", "半导体制程", "股价", "期货", "大盘",
+    "房地产", "楼市", "医疗", "药物", "基因", "政策", "监管", "外交",
+]
+
+
+def _prefilter(items: list[ContentItem]) -> list[ContentItem]:
+    """粗过滤：去掉明显不相关的内容，保留可能相关的"""
+    kept = []
+    for item in items:
+        text = ""
+        if isinstance(item, Tweet):
+            text = (item.text + " " + getattr(item, 'body', '')).lower()
+        elif isinstance(item, UserTweet):
+            text = (item.title + " " + item.desc).lower()
+        else:
+            text = (item.title + " " + item.desc).lower()
+
+        # 有屏蔽词直接丢
+        if any(kw in text for kw in _BLOCK_KEYWORDS):
+            continue
+        # 有保留词才留下
+        if any(kw in text for kw in _KEEP_KEYWORDS):
+            kept.append(item)
+
+    logger.info(f"Prefilter: {len(items)} → {len(kept)} items")
+    # 如果过滤太猛（<5条），降级回全量
+    return kept if len(kept) >= 5 else items
 
 
 @dataclass
@@ -54,7 +100,9 @@ def select_best(items: list[ContentItem], criteria: str, **_) -> SelectedContent
     if not items:
         return None
 
-    prompt = f"""你是 AI/创业/产品领域的内容策展人。
+    items = _prefilter(items)
+
+    prompt = f"""你是 AI/创业/产品/独立开发领域的内容策展人，只关注这些领域。
 
 筛选标准：
 {criteria}

@@ -42,18 +42,21 @@ def main():
     except Exception as e:
         logger.error(f"RSS fetch failed: {e}")
 
-    # 1c. X/Twitter 关注账号（via RSSHub / Nitter）
-    try:
-        from fetchers.twitter_rss_fetcher import fetch_all_users
-        tw_users_cfg = config["sources"].get("twitter_users", {})
-        accounts = tw_users_cfg.get("accounts", [])
-        max_per_user = tw_users_cfg.get("max_per_account", 3)
-        if accounts:
-            items = fetch_all_users(accounts, max_per_user)
-            all_items.extend(items)
-            logger.info(f"Twitter users: {len(items)} tweets from {len(accounts)} accounts")
-    except Exception as e:
-        logger.error(f"Twitter user fetch failed: {e}")
+    # 1c. X/Twitter 关注账号（via RSSHub / Nitter，需 enabled: true）
+    tw_users_cfg = config["sources"].get("twitter_users", {})
+    if tw_users_cfg.get("enabled", True):
+        try:
+            from fetchers.twitter_rss_fetcher import fetch_all_users
+            accounts = tw_users_cfg.get("accounts", [])
+            max_per_user = tw_users_cfg.get("max_per_account", 3)
+            if accounts:
+                items = fetch_all_users(accounts, max_per_user)
+                all_items.extend(items)
+                logger.info(f"Twitter users: {len(items)} tweets from {len(accounts)} accounts")
+        except Exception as e:
+            logger.error(f"Twitter user fetch failed: {e}")
+    else:
+        logger.info("Twitter user fetch disabled (rsshub/nitter unavailable)")
 
     if not all_items:
         logger.error("No items fetched — exit")
