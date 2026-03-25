@@ -8,10 +8,11 @@ from typing import Union
 
 from ai.llm_client import call_llm
 from fetchers.twitter_fetcher import Tweet
+from fetchers.twitter_rss_fetcher import UserTweet
 from fetchers.xhs_fetcher import XHSNote
 
 logger = logging.getLogger(__name__)
-ContentItem = Union[Tweet, XHSNote]
+ContentItem = Union[Tweet, XHSNote, UserTweet]
 
 
 @dataclass
@@ -27,16 +28,22 @@ def _format_items(items: list[ContentItem]) -> str:
     lines = []
     for i, item in enumerate(items):
         if isinstance(item, Tweet):
-            body_preview = getattr(item, 'body', '')[:400] if getattr(item, 'body', '') else ''
+            body_preview = getattr(item, 'body', '')[:300] if getattr(item, 'body', '') else ''
             lines.append(
-                f"[{i}] 标题={item.text}\n"
+                f"[{i}] [{item.author}] {item.text}\n"
                 f"    热度={item.like_count}赞/{item.reply_count}评论\n"
-                f"    评论摘要={body_preview}\n"
+                f"    讨论={body_preview}\n"
+                f"    链接={item.url}"
+            )
+        elif isinstance(item, UserTweet):
+            lines.append(
+                f"[{i}] [{item.author}] {item.title}\n"
+                f"    内容={item.desc[:300]}\n"
                 f"    链接={item.url}"
             )
         else:
             lines.append(
-                f"[{i}] 标题={item.title}\n"
+                f"[{i}] [{getattr(item, 'author', 'RSS')}] {item.title}\n"
                 f"    内容={item.desc[:300]}\n"
                 f"    链接={item.url}"
             )
@@ -71,9 +78,17 @@ def select_best(items: list[ContentItem], criteria: str, **_) -> SelectedContent
             if getattr(item, 'body', ''):
                 body = f"{item.text}\n\n【社区讨论】\n{item.body}"
             return SelectedContent(
-                source_type="twitter",
+                source_type="hackernews",
                 title=item.text,
                 body=body,
+                url=item.url,
+                reason=data.get("reason", ""),
+            )
+        elif isinstance(item, UserTweet):
+            return SelectedContent(
+                source_type="twitter",
+                title=item.title,
+                body=f"{item.title}\n\n{item.desc}",
                 url=item.url,
                 reason=data.get("reason", ""),
             )

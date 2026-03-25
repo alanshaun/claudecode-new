@@ -14,7 +14,23 @@ sources:
     accounts: []          # 保留字段，实际由 HackerNews 抓取
     max_per_account: 15   # 抓取 HN top N 条
 
-  # RSS 订阅（中文科技/商业）
+  # X/Twitter 关注账号（via RSSHub / Nitter 转 RSS，失败自动跳过）
+  twitter_users:
+    accounts:
+      - zarazhangrui      # 扎拉张睿，AI内容策展
+      - shangdu2005       # 领哥，AI领域咨询与干货
+      - zstmfhy           # AI奶爸
+      - onehopeA9         # 用小龙虾提特斯拉的大佬
+      - bozhou_ai         # 泊舟，AI干货分享
+      - runes_leo         # Leo，AI结合预测市场
+      - cryptoxiao        # 6551创始人
+      - vigorX777         # AI领域干货
+      - servasyy_ai       # 偏技术的AI分享
+      - yihui_indie       # 独立开发/一人公司
+      - dankoehoe         # dankoe，内容创作/solopreneur
+    max_per_account: 3
+
+  # RSS 订阅（中文科技/商业/AI/独立开发）
   rss:
     feeds:
       - url: "https://36kr.com/feed"
@@ -25,6 +41,12 @@ sources:
         name: "少数派"
       - url: "https://www.producthunt.com/feed"
         name: "Product Hunt"
+      - url: "https://www.indiehackers.com/feed.rss"
+        name: "Indie Hackers"
+      - url: "https://tldr.tech/api/rss/founders"
+        name: "TLDR Founders"
+      - url: "https://www.deeplearning.ai/the-batch/feed/"
+        name: "The Batch (吴恩达)"
     max_per_feed: 5
 
   # 保留字段兼容
@@ -36,13 +58,14 @@ sources:
 selector:
   model: "claude-opus-4-6"
   criteria: |
-    你关注的领域：AI、创业、产品、商业、一人公司（solopreneur/indie hacker）
+    你关注的领域：AI、创业、产品、商业、一人公司（solopreneur/indie hacker）、冷启动
 
     优先选择：
     1. AI 技术突破或 AI 产品落地的新鲜案例
     2. 一个人或小团队做出有影响力产品的故事
     3. 有反常识洞见、具体数据或真实案例的内容
     4. 商业模式创新或产品增长的新思路
+    5. 冷启动、获客、分发的具体方法
 
     避免：
     - 纯新闻资讯（没有观点的信息播报）

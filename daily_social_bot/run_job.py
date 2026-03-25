@@ -29,20 +29,31 @@ def main():
     except Exception as e:
         logger.error(f"HackerNews fetch failed: {e}")
 
-    # 1b. RSS 订阅（36kr / 虎嗅 / 少数派 / Product Hunt）
+    # 1b. RSS 订阅（36kr / 虎嗅 / 少数派 / Product Hunt 等）
     try:
         from fetchers.xhs_fetcher import XHSFetcher
         rss_cfg = config["sources"].get("rss", {})
         feeds = rss_cfg.get("feeds", [])
         max_per = rss_cfg.get("max_per_feed", 5)
         if feeds:
-            fetcher = XHSFetcher()
-            # 把 feed urls 作为 keywords 传入
-            items = fetcher.fetch_feeds(feeds, max_per)
+            items = XHSFetcher().fetch_feeds(feeds, max_per)
             all_items.extend(items)
             logger.info(f"RSS: {len(items)} items")
     except Exception as e:
         logger.error(f"RSS fetch failed: {e}")
+
+    # 1c. X/Twitter 关注账号（via RSSHub / Nitter）
+    try:
+        from fetchers.twitter_rss_fetcher import fetch_all_users
+        tw_users_cfg = config["sources"].get("twitter_users", {})
+        accounts = tw_users_cfg.get("accounts", [])
+        max_per_user = tw_users_cfg.get("max_per_account", 3)
+        if accounts:
+            items = fetch_all_users(accounts, max_per_user)
+            all_items.extend(items)
+            logger.info(f"Twitter users: {len(items)} tweets from {len(accounts)} accounts")
+    except Exception as e:
+        logger.error(f"Twitter user fetch failed: {e}")
 
     if not all_items:
         logger.error("No items fetched — exit")
