@@ -4,7 +4,6 @@ GitHub Actions 入口 — 执行一次完整的抓取/筛选/生成/推送流程
 import logging
 import sys
 import yaml
-import os
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,32 +17,46 @@ def main():
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
 
-    # 1. 抓取
     all_items = []
+
+    # 1a. HackerNews
     try:
         from fetchers.twitter_fetcher import TwitterFetcher
         tw_cfg = config["sources"]["twitter"]
-        all_items.extend(TwitterFetcher().fetch_accounts(tw_cfg["accounts"], tw_cfg["max_per_account"]))
+        items = TwitterFetcher().fetch_accounts(tw_cfg["accounts"], tw_cfg["max_per_account"])
+        all_items.extend(items)
+        logger.info(f"HackerNews: {len(items)} items")
     except Exception as e:
-        logger.error(f"Twitter fetch failed: {e}")
+        logger.error(f"HackerNews fetch failed: {e}")
 
+    # 1b. RSS 订阅（36kr / 虎嗅 / 少数派 / Product Hunt）
     try:
         from fetchers.xhs_fetcher import XHSFetcher
-        xhs_cfg = config["sources"]["xiaohongshu"]
-        all_items.extend(XHSFetcher().fetch_keywords(xhs_cfg["keywords"], xhs_cfg["max_per_keyword"]))
+        rss_cfg = config["sources"].get("rss", {})
+        feeds = rss_cfg.get("feeds", [])
+        max_per = rss_cfg.get("max_per_feed", 5)
+        if feeds:
+            fetcher = XHSFetcher()
+            # 把 feed urls 作为 keywords 传入
+            items = fetcher.fetch_feeds(feeds, max_per)
+            all_items.extend(items)
+            logger.info(f"RSS: {len(items)} items")
     except Exception as e:
-        logger.error(f"XHS fetch failed: {e}")
+        logger.error(f"RSS fetch failed: {e}")
 
     if not all_items:
         logger.error("No items fetched — exit")
         sys.exit(1)
 
-    # 2. 筛选
+    logger.info(f"Total items: {len(all_items)}")
+
+    # 2. AI 筛选
     from ai.selector import select_best
     selected = select_best(all_items, config["selector"]["criteria"])
     if not selected:
         logger.error("Selector returned nothing — exit")
         sys.exit(1)
+    logger.info(f"Selected: [{selected.source_type}] {selected.title[:60]}")
 
     # 3. 生成推文
     from ai.generator import generate_tweets
@@ -53,11 +66,11 @@ def main():
         logger.error("Generator returned no tweets — exit")
         sys.exit(1)
 
-    # 4. 发送飞书卡片（推文内容嵌入按钮，Render 回调时直接取用）
-    from notifier.feishu import send_daily_drafts, send_text
+    # 4. 发飞书卡片
+    from notifier.feishu import send_daily_drafts
     ok = send_daily_drafts(tweets, selected.title, selected.url)
     if ok:
-        logger.info("Feishu card sent — waiting for user confirmation via Render")
+        logger.info("Feishu card sent — waiting for confirmation")
     else:
         logger.error("Failed to send Feishu card")
         sys.exit(1)
