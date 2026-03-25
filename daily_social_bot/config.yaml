@@ -19,7 +19,7 @@ sources:
     feeds:
       - url: "https://36kr.com/feed"
         name: "36氪"
-      - url: "https://www.huxiu.com/rss/0.rss"
+      - url: "https://www.huxiu.com/rss/article.xml"
         name: "虎嗅"
       - url: "https://sspai.com/feed"
         name: "少数派"
