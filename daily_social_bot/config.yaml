@@ -3,39 +3,51 @@
 # ═══════════════════════════════════════════════════════════
 
 schedule:
-  hour: 9       # 每天几点运行
+  hour: 9
   minute: 0
   timezone: "Asia/Shanghai"
 
 # ── 信息源 ────────────────────────────────────────────────
 sources:
+  # HackerNews Top Stories（英文科技/AI/创业）
   twitter:
-    # 关注的账号 (不含 @)
-    accounts:
-      - elonmusk
-      - sama
-      - karpathy
-    # 每个账号抓最近几条
-    max_per_account: 10
+    accounts: []          # 保留字段，实际由 HackerNews 抓取
+    max_per_account: 15   # 抓取 HN top N 条
 
+  # RSS 订阅（中文科技/商业）
+  rss:
+    feeds:
+      - url: "https://36kr.com/feed"
+        name: "36氪"
+      - url: "https://www.huxiu.com/rss/0.rss"
+        name: "虎嗅"
+      - url: "https://sspai.com/feed"
+        name: "少数派"
+      - url: "https://www.producthunt.com/feed"
+        name: "Product Hunt"
+    max_per_feed: 5
+
+  # 保留字段兼容
   xiaohongshu:
-    # 搜索关键词列表 (每次取前 N 条)
-    keywords:
-      - AI创业
-      - 出海产品
-    max_per_keyword: 5
+    keywords: []
+    max_per_keyword: 0
 
 # ── 内容筛选 ──────────────────────────────────────────────
 selector:
-  # Claude 模型
   model: "claude-opus-4-6"
-  # 筛选标准（写进 prompt）
   criteria: |
+    你关注的领域：AI、创业、产品、商业、一人公司（solopreneur/indie hacker）
+
     优先选择：
-    1. 有独特洞见或数据支撑的内容
-    2. 与 AI、创业、出海相关的内容
-    3. 近 24 小时内互动量高的内容
-    避免：转发/广告/纯情绪内容
+    1. AI 技术突破或 AI 产品落地的新鲜案例
+    2. 一个人或小团队做出有影响力产品的故事
+    3. 有反常识洞见、具体数据或真实案例的内容
+    4. 商业模式创新或产品增长的新思路
+
+    避免：
+    - 纯新闻资讯（没有观点的信息播报）
+    - 广告/软文/融资公告（无干货）
+    - 宏观政策/金融市场类内容
 
 # ── 推文生成 ──────────────────────────────────────────────
 generator:
@@ -44,13 +56,15 @@ generator:
   style: |
     风格要求：
     - 简洁有力，不超过 220 字符
-    - 有一句话核心洞察
-    - 口语化，不用 hashtag，不用 emoji
-    - 中文或英文（根据原文语言决定）
-    示例风格：
-    "大模型正在把搜索引擎变成答案机器。问题不是 Google 会不会死，而是哪类信息查询会先消失。"
+    - 第一句就是核心洞察，不铺垫
+    - 口语化，像在跟朋友说话
+    - 不用 hashtag，不用 emoji
+    - 中文为主，术语可保留英文
+    示例：
+    "一人公司的护城河不是技术，是你愿意做别人懒得做的那件小事。"
+    "大模型正在把搜索变成答案机器。先消失的不是 Google，是 SEO 行业。"
+    "Product Hunt 今天第一名：一个人做的 AI 工具，月收入 $8k。门槛从来不是技术。"
 
 # ── 发布 ──────────────────────────────────────────────────
 poster:
-  # 确认超时后自动跳过（不发布），单位：分钟
   confirm_timeout_minutes: 60
