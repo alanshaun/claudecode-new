@@ -1,6 +1,8 @@
 """
-GitHub Actions 入口 — 执行一次完整的抓取/筛选/生成/推送流程
+GitHub Actions 入口 — 话题轮转模式
+每次运行从预设话题列表里取一个，生成推文发飞书确认
 """
+import datetime
 import logging
 import sys
 import yaml
@@ -12,77 +14,64 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 话题池 — 围绕一人公司 / AI / 商业 / 内容变现
+TOPICS = [
+    "一人公司的工具链和成本控制：用最低的固定成本搭起能赚钱的系统",
+    "AI工具的真实效率：哪些真的改变了工作方式，哪些是噱头",
+    "精准小流量 vs 泛流量陷阱：粉丝数不等于变现能力",
+    "冷启动的具体打法：从0到第一批付费用户怎么走",
+    "定价心理学：为什么大多数独立开发者把产品卖便宜了",
+    "一人公司的决策逻辑：时间、精力、钱，怎么分配才不亏",
+    "内容分发的本质：什么平台值得深耕，什么时候该放弃",
+    "需求验证：动手做之前，怎么知道有人愿意付钱",
+    "复利思维：内容、产品、用户关系，哪些东西会随时间增值",
+    "独立创业的心路：一个人做所有决策，背所有锅，也拿100%利润",
+    "AI替代人力的真实账本：具体省了多少钱、多少时间",
+    "社群变现 vs 广告变现：哪种模式更适合一人公司",
+    "产品冷启动的分发渠道选择：从第一个用户到第一百个",
+    "创业中的沉没成本陷阱：什么时候应该放弃一个方向",
+    "一人公司的竞争优势：小就是快，快就是护城河",
+]
+
+
+def pick_topic(topics: list[str]) -> str:
+    now = datetime.datetime.now()
+    # 用「今天是第几天 × 5 + 当前时段」做偏移，确保同一天5次运行话题各不同
+    hour_slot = {9: 0, 10: 0, 11: 1, 12: 1, 13: 2, 14: 2, 15: 2, 16: 3, 17: 3, 18: 3, 19: 4, 20: 4, 21: 4, 22: 4}.get(now.hour, 0)
+    idx = (now.timetuple().tm_yday * 5 + hour_slot) % len(topics)
+    return topics[idx]
+
 
 def main():
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
 
-    all_items = []
+    # 1. 选话题
+    topics = config.get("topics", TOPICS)
+    topic = pick_topic(topics)
+    logger.info(f"Today's topic: {topic}")
 
-    # 1a. HackerNews
-    try:
-        from fetchers.twitter_fetcher import TwitterFetcher
-        tw_cfg = config["sources"]["twitter"]
-        items = TwitterFetcher().fetch_accounts(tw_cfg["accounts"], tw_cfg["max_per_account"])
-        all_items.extend(items)
-        logger.info(f"HackerNews: {len(items)} items")
-    except Exception as e:
-        logger.error(f"HackerNews fetch failed: {e}")
-
-    # 1b. RSS 订阅（36kr / 虎嗅 / 少数派 / Product Hunt 等）
-    try:
-        from fetchers.xhs_fetcher import XHSFetcher
-        rss_cfg = config["sources"].get("rss", {})
-        feeds = rss_cfg.get("feeds", [])
-        max_per = rss_cfg.get("max_per_feed", 5)
-        if feeds:
-            items = XHSFetcher().fetch_feeds(feeds, max_per)
-            all_items.extend(items)
-            logger.info(f"RSS: {len(items)} items")
-    except Exception as e:
-        logger.error(f"RSS fetch failed: {e}")
-
-    # 1c. X/Twitter 关注账号（via RSSHub / Nitter，需 enabled: true）
-    tw_users_cfg = config["sources"].get("twitter_users", {})
-    if tw_users_cfg.get("enabled", True):
-        try:
-            from fetchers.twitter_rss_fetcher import fetch_all_users
-            accounts = tw_users_cfg.get("accounts", [])
-            max_per_user = tw_users_cfg.get("max_per_account", 3)
-            if accounts:
-                items = fetch_all_users(accounts, max_per_user)
-                all_items.extend(items)
-                logger.info(f"Twitter users: {len(items)} tweets from {len(accounts)} accounts")
-        except Exception as e:
-            logger.error(f"Twitter user fetch failed: {e}")
-    else:
-        logger.info("Twitter user fetch disabled (rsshub/nitter unavailable)")
-
-    if not all_items:
-        logger.error("No items fetched — exit")
-        sys.exit(1)
-
-    logger.info(f"Total items: {len(all_items)}")
-
-    # 2. AI 筛选
-    from ai.selector import select_best
-    selected = select_best(all_items, config["selector"]["criteria"])
-    if not selected:
-        logger.error("Selector returned nothing — exit")
-        sys.exit(1)
-    logger.info(f"Selected: [{selected.source_type}] {selected.title[:60]}")
-
-    # 3. 生成推文
+    # 2. 生成推文
     from ai.generator import generate_tweets
+    from ai.selector import SelectedContent
+
+    content = SelectedContent(
+        source_type="topic",
+        title=topic,
+        body="",
+        url="",
+        reason=topic,
+    )
     gen = config["generator"]
-    tweets = generate_tweets(selected, gen["style"], gen["tweet_count"])
+    tweets = generate_tweets(content, gen["style"], gen["tweet_count"])
     if not tweets:
         logger.error("Generator returned no tweets — exit")
         sys.exit(1)
+    logger.info(f"Generated {len(tweets)} tweets")
 
-    # 4. 发飞书卡片
+    # 3. 发飞书卡片
     from notifier.feishu import send_daily_drafts
-    ok = send_daily_drafts(tweets, selected.title, selected.url)
+    ok = send_daily_drafts(tweets, topic, "")
     if ok:
         logger.info("Feishu card sent — waiting for confirmation")
     else:
