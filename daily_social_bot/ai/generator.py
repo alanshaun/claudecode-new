@@ -11,31 +11,29 @@ logger = logging.getLogger(__name__)
 
 
 def generate_tweets(content: SelectedContent, style_guide: str, count: int = 3, **_) -> list[str]:
-    prompt = f"""你是一个真实的人，正在写自己的 X（Twitter）推文。
+    prompt = f"""你是一个在 X 上写作的创业者/独立开发者，正在写今天的推文。
 
-今日发现的内容：
+今天看到的内容（用它来写推文，但要写成你自己的感受和判断，不是复述）：
 标题：{content.title}
-正文：{content.body[:800]}
-（来源链接不需要写进推文，发布时会自动附上）
+正文摘要：{content.body[:600]}
 
 {style_guide}
 
-用这条内容写 {count} 条推文草稿。
+写 {count} 条推文草稿，角度各不同（暴论型、反直觉型、发现分享型各选其一）。
 
-【铁律，违反即重写】
-1. 必须有"我"作主语，或以"刚看到"、"今天发现"、"推荐一个"、"一直在想"这类第一人称开头
-2. 禁止出现：「这意味着」「这不仅仅是」「某某技术/公司的X，标志着Y」等新闻播报句式
-3. 禁止总结别人的观点，要说自己的感受、判断、疑问、或从中联想到的事
-4. 每条 6~12 行，有具体细节，不是一句话大道理
-5. 三条角度不同：可以是「发现分享」「个人判断」「带出一个更大的问题」
-
-好开头示例：
-- "刚看到一个…"
-- "我一直搞不懂为什么…直到今天看到这个"
-- "这周让我印象最深的一件事："
-- "推荐一个…，我自己在用"
-- "有个问题我想了很久："
-- "说实话，我当时看到这个数字吓了一跳："
+检查清单（每条都要过，不过就重写）：
+□ 有没有「我」或强开头（「说个暴论」「说实话」「刚看到」「一个反直觉」）？
+□ 有没有至少一个具体数字或工具名？
+□ 有没有以下烂尾/AI腔？有就删掉重写：
+  - "这意味着…" / "标志着…"
+  - "值得我们每一个X学习"
+  - "不仅…也…"的套句
+  - "这种X的思维，值得Y"
+  - "让我意识到，为他们…不仅能…也是…"
+  - "这种X让我确信，Y远超我们想象"
+□ 结尾是否有劲？好结尾 = 一句自己的结论/反问/或让人想转发的话
+□ 整体能量：读出来是否有力量感，还是像在写学生作文？
+□ 有没有编造「我亲自做了XX」「我曾经XX」之类的虚假个人经历？有就改成「看到有人做了…」或第三方视角
 
 输出 JSON 数组，包含 {count} 个字符串。只输出数组，不要其他内容。"""
 
@@ -44,7 +42,13 @@ def generate_tweets(content: SelectedContent, style_guide: str, count: int = 3, 
         raw = raw.strip().strip("```json").strip("```").strip()
         tweets = json.loads(raw)
         if isinstance(tweets, list):
-            return [str(t) for t in tweets[:count]]
+            result = []
+            for t in tweets[:count]:
+                # 有时 AI 返回 {"text": "..."} 对象而非字符串
+                if isinstance(t, dict):
+                    t = t.get("text") or t.get("tweet") or t.get("content") or str(t)
+                result.append(str(t))
+            return result
     except Exception as e:
         logger.error(f"Generator parse error: {e}\nRaw: {raw}")
     return []
