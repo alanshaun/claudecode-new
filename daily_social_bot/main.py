@@ -86,13 +86,14 @@ def run_daily_job(config: dict) -> None:
             send_text(f"✅ 推文已发布！\n{url}\n\n内容：{tweet}")
         except Exception as e:
             logger.error(f"Post failed: {e}")
+            from notifier.feishu import send_text
             send_text(f"❌ 发布失败：{e}")
 
     from server.callback import set_pending
     set_pending(tweets, on_confirm)
 
-    # 5. 推送草稿到企业微信
-    from notifier.wecom import send_daily_drafts
+    # 5. 推送草稿到飞书
+    from notifier.feishu import send_daily_drafts
     ok = send_daily_drafts(tweets, selected.title, selected.url)
     if ok:
         logger.info("Drafts sent to WeChat — waiting for user confirmation")
