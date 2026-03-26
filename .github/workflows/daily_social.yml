@@ -7,7 +7,7 @@ on:
     - cron: '0 6 * * *'    # 北京时间 14:00
     - cron: '0 9 * * *'    # 北京时间 17:00
     - cron: '0 13 * * *'   # 北京时间 21:00
-  workflow_dispatch:        # 允许手动触发测试
+  workflow_dispatch:
 
 jobs:
   run:
@@ -28,19 +28,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install Playwright browser
+        run: playwright install chromium --with-deps
+
       - name: Run daily job
         env:
-          TWITTER_API_KEY:            ${{ secrets.TWITTER_API_KEY }}
-          TWITTER_API_SECRET:         ${{ secrets.TWITTER_API_SECRET }}
-          TWITTER_ACCESS_TOKEN:       ${{ secrets.TWITTER_ACCESS_TOKEN }}
-          TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
-          TWITTER_BEARER_TOKEN:       ${{ secrets.TWITTER_BEARER_TOKEN }}
+          TWITTER_USERNAME:           ${{ secrets.TWITTER_USERNAME }}
+          TWITTER_PASSWORD:           ${{ secrets.TWITTER_PASSWORD }}
           KIMI_API_KEY:               ${{ secrets.KIMI_API_KEY }}
           GEMINI_API_KEY:             ${{ secrets.GEMINI_API_KEY }}
-          XHS_COOKIE:                 ${{ secrets.XHS_COOKIE }}
           FEISHU_APP_ID:              ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET:          ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_USER_ID:             ${{ secrets.FEISHU_USER_ID }}
-          RENDER_POST_URL:            ${{ secrets.RENDER_POST_URL }}
-          POST_SECRET:                ${{ secrets.POST_SECRET }}
         run: python run_job.py

@@ -1,34 +1,61 @@
 """
-Twitter / X 发布器
-使用 OAuth 1.0a（需要 API Key + Access Token）
+Twitter 发布器 — 浏览器自动化，不需要 API key
 """
 import os
 import logging
-
-import tweepy
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 
 def post_tweet(text: str) -> str:
-    """发布推文，返回推文 URL"""
-    api_key = os.environ["TWITTER_API_KEY"]
-    api_secret = os.environ["TWITTER_API_SECRET"]
-    access_token = os.environ["TWITTER_ACCESS_TOKEN"]
-    access_token_secret = os.environ["TWITTER_ACCESS_TOKEN_SECRET"]
+    return asyncio.run(_post(text))
 
-    # 打印凭证前缀，方便排查哪个凭证是错的
-    logger.info(f"API Key prefix: {api_key[:8]}...")
-    logger.info(f"Access Token prefix: {access_token[:20]}...")
 
-    client = tweepy.Client(
-        consumer_key=api_key,
-        consumer_secret=api_secret,
-        access_token=access_token,
-        access_token_secret=access_token_secret,
-    )
-    resp = client.create_tweet(text=text)
-    tweet_id = resp.data["id"]
-    url = f"https://x.com/i/status/{tweet_id}"
-    logger.info(f"Posted tweet: {url}")
-    return url
+async def _post(text: str) -> str:
+    from playwright.async_api import async_playwright
+
+    username = os.environ["TWITTER_USERNAME"]
+    password = os.environ["TWITTER_PASSWORD"]
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        ctx = await browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+        )
+        page = await ctx.new_page()
+
+        # 登录
+        await page.goto("https://x.com/i/flow/login", wait_until="networkidle")
+        await page.wait_for_selector('input[name="text"]', timeout=15000)
+        await page.fill('input[name="text"]', username)
+        await page.keyboard.press("Enter")
+
+        # 可能弹出手机号验证，直接用用户名跳过
+        try:
+            extra = await page.wait_for_selector('input[name="text"]', timeout=4000)
+            await extra.fill(username)
+            await page.keyboard.press("Enter")
+        except Exception:
+            pass
+
+        await page.wait_for_selector('input[name="password"]', timeout=10000)
+        await page.fill('input[name="password"]', password)
+        await page.keyboard.press("Enter")
+
+        await page.wait_for_url("**/home", timeout=20000)
+        logger.info("Logged in to X")
+
+        # 发推
+        await page.wait_for_selector('[data-testid="tweetTextarea_0"]', timeout=10000)
+        await page.click('[data-testid="tweetTextarea_0"]')
+        await page.type('[data-testid="tweetTextarea_0"]', text, delay=30)
+
+        await page.click('[data-testid="tweetButtonInline"]')
+        await page.wait_for_timeout(3000)
+
+        await browser.close()
+
+    logger.info("Tweet posted via browser")
+    return "https://x.com/home"
