@@ -26,9 +26,7 @@ def _post_tweet(text: str) -> str:
     )
     resp = client.create_tweet(text=text)
     tweet_id = resp.data["id"]
-    me = client.get_me()
-    username = me.data.username if me.data else "unknown"
-    return f"https://x.com/{username}/status/{tweet_id}"
+    return f"https://x.com/i/status/{tweet_id}"
 
 
 def _notify_feishu(text: str):

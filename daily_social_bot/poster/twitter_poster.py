@@ -27,14 +27,8 @@ def post_tweet(text: str) -> str:
         access_token=access_token,
         access_token_secret=access_token_secret,
     )
-    try:
-        resp = client.create_tweet(text=text)
-    except tweepy.errors.Unauthorized as e:
-        logger.error(f"Twitter 401 detail: {e.response.text if hasattr(e, 'response') else e}")
-        raise
+    resp = client.create_tweet(text=text)
     tweet_id = resp.data["id"]
-    me = client.get_me()
-    username = me.data.username if me.data else "unknown"
-    url = f"https://x.com/{username}/status/{tweet_id}"
+    url = f"https://x.com/i/status/{tweet_id}"
     logger.info(f"Posted tweet: {url}")
     return url
