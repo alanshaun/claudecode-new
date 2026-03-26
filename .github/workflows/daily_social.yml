@@ -11,7 +11,7 @@ on:
 
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: daily_social_bot
@@ -29,9 +29,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install Playwright browser
-        run: |
-          sudo apt-get install -y libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3t64 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libnspr4 libnss3
-          playwright install chromium
+        run: playwright install chromium --with-deps
 
       - name: Run daily job
         env:
