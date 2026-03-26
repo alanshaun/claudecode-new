@@ -103,43 +103,29 @@ def main():
 
     gen = config["generator"]
 
-    # 1. 尝试抓外部素材
-    raw_items = fetch_content(config)
-    logger.info(f"Total raw items: {len(raw_items)}")
+    # 1. 从缓存取素材（每3天重新抓一次）
+    from content_cache import get_next_item
+
+    def _fetch():
+        return fetch_content(config)
+
+    raw_item = get_next_item(_fetch)
+    logger.info(f"Using cached item: {raw_item['title'][:60] if raw_item else 'None'}")
 
     from ai.generator import generate_tweets
-    from ai.selector import SelectedContent, select_best
-    from fetchers.twitter_rss_fetcher import UserTweet
+    from ai.selector import SelectedContent
 
-    if len(raw_items) >= 3:
-        # 2a. 有足够素材 → AI 选一条最有价值的，基于它写推文
-        selector_items = [
-            UserTweet(
-                id=d["url"],
-                author=d["source"],
-                title=d["title"],
-                desc=d["body"],
-                url=d["url"],
-            )
-            for d in raw_items
-        ]
-        selected = select_best(selector_items, config["selector"]["criteria"])
-        if selected:
-            content = SelectedContent(
-                source_type="external",
-                title=selected.title,
-                body=selected.body,
-                url=selected.url,
-                reason=f"来自 {selected.source}",
-            )
-            topic_label = f"{selected.source} · {selected.title[:40]}"
-            logger.info(f"Selected: {topic_label}")
-        else:
-            # selector 没选出来，用话题兜底
-            raw_items = []
-
-    if len(raw_items) < 3:
-        # 2b. 素材不够 → 话题兜底
+    if raw_item:
+        content = SelectedContent(
+            source_type="external",
+            title=raw_item["title"],
+            body=raw_item["body"],
+            url=raw_item["url"],
+            reason=f"来自 {raw_item['source']}",
+        )
+        topic_label = f"{raw_item['source']} · {raw_item['title'][:40]}"
+    else:
+        # 缓存为空兜底 → 话题轮转
         topics = config.get("topics", TOPICS)
         topic = pick_topic(topics)
         logger.info(f"Fallback to topic: {topic}")
