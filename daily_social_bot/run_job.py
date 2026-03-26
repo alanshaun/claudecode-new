@@ -159,13 +159,16 @@ def main():
         sys.exit(1)
     logger.info(f"Generated {len(tweets)} tweets")
 
-    # 4. 发飞书卡片
-    from notifier.feishu import send_daily_drafts
-    ok = send_daily_drafts(tweets, topic_label, content.url)
-    if ok:
-        logger.info("Feishu card sent")
-    else:
-        logger.error("Failed to send Feishu card")
+    # 4. 自动发布第一条
+    from poster.twitter_poster import post_tweet
+    from notifier.feishu import send_result, send_text
+    try:
+        tweet_url = post_tweet(tweets[0])
+        logger.info(f"Posted: {tweet_url}")
+        send_result(tweets[0], tweet_url, tweets[1:], topic_label)
+    except Exception as e:
+        logger.error(f"Post failed: {e}")
+        send_text(f"❌ 发布失败：{e}\n\n草稿：\n" + "\n\n".join(tweets))
         sys.exit(1)
 
 
