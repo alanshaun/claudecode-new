@@ -8,13 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 def call_llm(prompt: str, max_tokens: int = 1500) -> str:
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    if gemini_key:
-        return _call_gemini(prompt, max_tokens, gemini_key)
     kimi_key = os.environ.get("KIMI_API_KEY", "")
     if kimi_key:
         return _call_kimi(prompt, max_tokens, kimi_key)
-    raise RuntimeError("No LLM API key found (GEMINI_API_KEY or KIMI_API_KEY)")
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    if gemini_key:
+        return _call_gemini(prompt, max_tokens, gemini_key)
+    raise RuntimeError("No LLM API key found (KIMI_API_KEY or GEMINI_API_KEY)")
 
 
 def _call_gemini(prompt: str, max_tokens: int, api_key: str) -> str:
