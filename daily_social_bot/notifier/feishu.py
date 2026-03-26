@@ -28,8 +28,8 @@ def _get_token() -> str:
     return _token_cache["token"]
 
 
-def send_result(posted_tweet: str, tweet_url: str, other_drafts: list[str], source_title: str) -> bool:
-    """发送发布结果卡片：已发内容 + 其余草稿"""
+def send_drafts(tweets: list[str], source_title: str) -> bool:
+    """发送草稿卡片：全部候选推文，用户自己选一条发"""
     token = _get_token()
     user_id = os.environ["FEISHU_USER_ID"]
 
@@ -39,30 +39,21 @@ def send_result(posted_tweet: str, tweet_url: str, other_drafts: list[str], sour
             "text": {"tag": "lark_md", "content": f"**素材来源：** {source_title}"},
         },
         {"tag": "hr"},
-        {
-            "tag": "div",
-            "text": {
-                "tag": "lark_md",
-                "content": f"**已发布**\n{posted_tweet}\n\n[查看推文]({tweet_url})",
-            },
-        },
     ]
 
-    if other_drafts:
-        other_text = "\n\n".join(f"**草稿{i+2}**\n{d}" for i, d in enumerate(other_drafts))
-        elements += [
-            {"tag": "hr"},
-            {
-                "tag": "div",
-                "text": {"tag": "lark_md", "content": f"**其余草稿（未发布）**\n\n{other_text}"},
-            },
-        ]
+    for i, tweet in enumerate(tweets):
+        elements.append({
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": f"**选项 {i+1}**\n{tweet}"},
+        })
+        if i < len(tweets) - 1:
+            elements.append({"tag": "hr"})
 
     card = {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"tag": "plain_text", "content": "推文已发布"},
-            "template": "green",
+            "title": {"tag": "plain_text", "content": "今日推文草稿 · 请选一条发布"},
+            "template": "blue",
         },
         "elements": elements,
     }
@@ -79,7 +70,7 @@ def send_result(posted_tweet: str, tweet_url: str, other_drafts: list[str], sour
     )
     ok = resp.status_code == 200 and resp.json().get("code") == 0
     if not ok:
-        logger.error(f"Feishu send_result failed: {resp.text}")
+        logger.error(f"Feishu send_drafts failed: {resp.text}")
     return ok
 
 

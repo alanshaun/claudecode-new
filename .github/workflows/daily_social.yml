@@ -30,13 +30,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright browser
-        run: playwright install chromium --with-deps
-
       - name: Run daily job
         env:
-          TWITTER_USERNAME:           ${{ secrets.TWITTER_USERNAME }}
-          TWITTER_PASSWORD:           ${{ secrets.TWITTER_PASSWORD }}
           KIMI_API_KEY:               ${{ secrets.KIMI_API_KEY }}
           GEMINI_API_KEY:             ${{ secrets.GEMINI_API_KEY }}
           FEISHU_APP_ID:              ${{ secrets.FEISHU_APP_ID }}
