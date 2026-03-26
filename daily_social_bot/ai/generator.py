@@ -11,20 +11,26 @@ logger = logging.getLogger(__name__)
 
 
 def generate_tweets(content: SelectedContent, style_guide: str, count: int = 3, **_) -> list[str]:
-    topic = content.title
+    source_block = f"【原文标题】{content.title}"
+    if content.body and len(content.body.strip()) > 20:
+        source_block += f"\n【原文内容】{content.body[:800]}"
 
-    prompt = f"""你是一个在做一人公司的创业者，在 X 上分享自己的真实思考和商业判断。
+    prompt = f"""你是一个在做一人公司的创业者，读完下面这篇内容后，写出你真实的感受和判断。
 
-今天的话题：{topic}
+{source_block}
 
 {style_guide}
 
-写 {count} 条推文，角度分别用：暴论型、反直觉型、心路历程型。
+要求：
+- 你读的是真实内容，基于它发表你的看法，不要复述原文
+- 写 {count} 条推文，分别是：暴论型、反直觉型、踩坑/感悟型
+- 每条100-200字，短句换行，有节奏感
 
 【硬性禁止】
-- 不许编造产品名、公司名、工具名（不要出现 TurboQuant、XYZ平台 等虚构名词）
-- 不许写"今天遇到一件事""我看到一篇文章"——只写观点、判断、原则
-- 不许写新闻报道口吻，不许转述别人的事
+- 不许编造产品名、公司名、工具名
+- 不许写"做一人公司X个月"这种假经历——你没有，别编
+- 不许写新闻报道口吻，不许说"数据显示""研究表明"
+- 不许堆砌大词：不说"重塑""赋能""颠覆"
 
 输出 JSON 数组，包含 {count} 个字符串。只输出数组，不要其他内容。"""
 
