@@ -33,7 +33,6 @@ jobs:
       - name: Run daily job
         env:
           KIMI_API_KEY:               ${{ secrets.KIMI_API_KEY }}
-          GEMINI_API_KEY:             ${{ secrets.GEMINI_API_KEY }}
           FEISHU_APP_ID:              ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET:          ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_USER_ID:             ${{ secrets.FEISHU_USER_ID }}

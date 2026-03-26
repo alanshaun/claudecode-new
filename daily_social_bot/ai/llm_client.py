@@ -1,5 +1,5 @@
 """
-LLM 客户端 — 优先 Gemini，回退 Kimi
+LLM 客户端 — Kimi
 """
 import os
 import logging
@@ -9,23 +9,9 @@ logger = logging.getLogger(__name__)
 
 def call_llm(prompt: str, max_tokens: int = 1500) -> str:
     kimi_key = os.environ.get("KIMI_API_KEY", "")
-    if kimi_key:
-        return _call_kimi(prompt, max_tokens, kimi_key)
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    if gemini_key:
-        return _call_gemini(prompt, max_tokens, gemini_key)
-    raise RuntimeError("No LLM API key found (KIMI_API_KEY or GEMINI_API_KEY)")
-
-
-def _call_gemini(prompt: str, max_tokens: int, api_key: str) -> str:
-    import google.generativeai as genai
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        "gemini-1.5-flash",
-        generation_config={"max_output_tokens": max_tokens, "temperature": 0.9},
-    )
-    resp = model.generate_content(prompt)
-    return resp.text.strip()
+    if not kimi_key:
+        raise RuntimeError("KIMI_API_KEY not set")
+    return _call_kimi(prompt, max_tokens, kimi_key)
 
 
 def _call_kimi(prompt: str, max_tokens: int, api_key: str) -> str:
