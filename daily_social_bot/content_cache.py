@@ -35,19 +35,17 @@ def _is_stale(cache: dict) -> bool:
     return (datetime.datetime.now() - fetched).days >= CACHE_DAYS
 
 
-def get_next_item(fetch_fn) -> dict | None:
+def get_next_items(n: int, fetch_fn) -> list[dict]:
     """
-    取下一条未使用的素材。
+    取 n 条未使用的素材，尽量来自不同来源。
     缓存耗尽或超过3天，自动重新抓取。
-    fetch_fn: () -> list[dict]，返回原始素材列表
     """
     cache = _load()
     unused = [item for item in cache.get("items", []) if not item.get("used")]
 
-    if _is_stale(cache) or len(unused) == 0:
+    if _is_stale(cache) or len(unused) < n:
         logger.info("Cache empty or stale, re-fetching content...")
         raw = fetch_fn()
-        # 取前 CACHE_SIZE 条
         items = [dict(item, used=False) for item in raw[:CACHE_SIZE]]
         cache = {
             "fetched_at": datetime.datetime.now().isoformat(),
@@ -58,14 +56,28 @@ def get_next_item(fetch_fn) -> dict | None:
         logger.info(f"Cache refreshed: {len(items)} items stored")
 
     if not unused:
-        return None
+        return []
 
-    # 取第一条未使用的
-    item = unused[0]
-    # 标记为已使用
-    for i, it in enumerate(cache["items"]):
-        if it["url"] == item["url"] and not it.get("used"):
-            cache["items"][i]["used"] = True
+    # 尽量从不同 source 各取一条
+    seen_sources = set()
+    selected = []
+    for item in unused:
+        if item["source"] not in seen_sources:
+            selected.append(item)
+            seen_sources.add(item["source"])
+        if len(selected) >= n:
             break
+    # 不够就补
+    for item in unused:
+        if len(selected) >= n:
+            break
+        if item not in selected:
+            selected.append(item)
+
+    # 标记已使用
+    used_urls = {it["url"] for it in selected}
+    for i, it in enumerate(cache["items"]):
+        if it["url"] in used_urls and not it.get("used"):
+            cache["items"][i]["used"] = True
     _save(cache)
-    return item
+    return selected

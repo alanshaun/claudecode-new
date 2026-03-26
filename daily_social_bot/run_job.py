@@ -105,27 +105,32 @@ def main():
 
     gen = config["generator"]
 
-    # 1. 从缓存取素材（每3天重新抓一次）
-    from content_cache import get_next_item
+    # 1. 从缓存取3条不同来源的素材
+    from content_cache import get_next_items
 
     def _fetch():
         return fetch_content(config)
 
-    raw_item = get_next_item(_fetch)
-    logger.info(f"Using cached item: {raw_item['title'][:60] if raw_item else 'None'}")
+    raw_items = get_next_items(3, _fetch)
+    logger.info(f"Using {len(raw_items)} cached items from: {[it['source'] for it in raw_items]}")
 
     from ai.generator import generate_tweets
     from ai.selector import SelectedContent
 
-    if raw_item:
+    if raw_items:
+        # 把多条素材合并，生成器会融合它们
+        combined_title = " / ".join(it["title"][:40] for it in raw_items)
+        combined_body = "\n\n---\n\n".join(
+            f"[{it['source']}] {it['title']}\n{it['body'][:300]}" for it in raw_items
+        )
         content = SelectedContent(
             source_type="external",
-            title=raw_item["title"],
-            body=raw_item["body"],
-            url=raw_item["url"],
-            reason=f"来自 {raw_item['source']}",
+            title=combined_title,
+            body=combined_body,
+            url="",
+            reason=f"来自 {len(raw_items)} 个来源",
         )
-        topic_label = f"{raw_item['source']} · {raw_item['title'][:40]}"
+        topic_label = " · ".join(it["source"] for it in raw_items)
     else:
         # 缓存为空兜底 → 话题轮转
         topics = config.get("topics", TOPICS)
