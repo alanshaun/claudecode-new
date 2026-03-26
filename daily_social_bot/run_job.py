@@ -111,7 +111,7 @@ def main():
     def _fetch():
         return fetch_content(config)
 
-    raw_items = get_next_items(3, _fetch)
+    raw_items = get_next_items(5, _fetch)
     logger.info(f"Using {len(raw_items)} cached items from: {[it['source'] for it in raw_items]}")
 
     from ai.generator import generate_tweets
